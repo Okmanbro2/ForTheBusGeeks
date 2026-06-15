@@ -356,8 +356,11 @@
   
 .route-search{margin-bottom:6px;}
 .route-section-title{font-size:10px;font-weight:700;color:var(--muted);margin:6px 0 4px;}
-.multi-add-item:hover{background:rgba(255,255,255,0.05);}
+.multi-add-item:hover{background:rgba(245,166,35,0.12);color:var(--accent);}
+.multi-add-item:hover .multi-add-hint{color:var(--accent);}
 
+
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
   /* ── Status bar ── */
   #statusbar {
@@ -375,7 +378,7 @@
 
 <!-- ══ TOP BAR ══ -->
 <div id="topbar">
-  <h1>FOR THE BUS GEEKS - The Game I've Always Ever Wanted</h1>
+  <h1 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;" title="FOR THE BUS GEEKS - The Game I've Always Ever Wanted">BUS GEEK 1.0</h1>
 
   <div class="sep"></div>
 
@@ -400,7 +403,7 @@
   <div id="sim-controls">
     <span id="speed-label">Speed</span>
     <input type="range" id="speed-range" min="1" max="10" value="5" oninput="updateSpeed(this.value)" />
-    <button id="sim-btn" onclick="toggleSim()">▶ Start Sim</button>
+    <button id="sim-btn" onclick="toggleSim()">▶ Start Simulation</button>
   </div>
 </div>
 
@@ -479,6 +482,11 @@ let selectedRouteType = 'local';
 // Track which seq-item is currently being edited: { routeId, side, stopId }
 let editingSeqItem = null;
 window._routeSearch = {};
+window._routePickMode = {
+  active: false,
+  routeId: null,
+  side: null
+};
 
 // ════════════════════════════════════════════
 //  MAP INIT
@@ -648,6 +656,7 @@ function createStopMarker(stop) {
       stop.lat = ll.lat; stop.lng = ll.lng;
       redrawRouteLines();
     });
+    stop.marker.on('click', () => handleRouteMapPick(stop.id));
     stop.marker.on('contextmenu', () => deleteStop(stop.id));
     if (!state.waypointsVisible) map.removeLayer(stop.marker);
     return;
@@ -674,6 +683,8 @@ function createStopMarker(stop) {
     stop.lat = ll.lat; stop.lng = ll.lng;
     redrawRouteLines();
   });
+  
+  stop.marker.on('click', () => handleRouteMapPick(stop.id));
 
   stop.marker.on('contextmenu', (e) => {
     L.DomEvent.stopPropagation(e);
@@ -952,6 +963,13 @@ function setActiveSide(routeId, side) {
   const r = state.routes.find(x => x.id === routeId);
   if (r) {
     r.activeSide = side;
+    // Exit pick mode if it's active for this route — picking was for the old side
+    if (window._routePickMode.active && window._routePickMode.routeId === routeId) {
+      window._routePickMode.active = false;
+      window._routePickMode.routeId = null;
+      window._routePickMode.side = null;
+      setStatus(`Switched to Side ${side} — pick mode exited.`);
+    }
     rerenderRouteBody(routeId);
   }
 }
@@ -1040,19 +1058,16 @@ function buildRouteBody(r) {
 
   function buildSelectable(items){
     return items.filter(s => !arr.includes(s.id)).map(s => {
-      const checkOrder = (window._multiAddOrder?.[r.id] || []).indexOf(s.id);
-      const checked = checkOrder !== -1;
       const label = `${s.isWaypoint?'◆ ':''}${s.name}${s.isWaypoint?'':' ('+s.types.join('/')+')'}`;
       return `
-      <label class="multi-add-item"
+      <div class="multi-add-item"
         onmouseenter="highlightStopMarker(${s.id})"
         onmouseleave="clearHighlightStopMarker(${s.id})"
-        style="display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;font-size:11px;cursor:pointer;${checked?'background:rgba(245,166,35,0.12);':''}">
-        <input type="checkbox" style="width:auto;margin:0;" ${checked?'checked':''}
-          onchange="toggleMultiAdd(${r.id},${s.id},this.checked)" />
+        onclick="quickAddToSide(${r.id},${s.id})"
+        style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:4px;font-size:11px;cursor:pointer;">
         <span style="flex:1;${s.isWaypoint?'color:#c4b5fd;':''}">${label}</span>
-        ${checked ? `<span style="font-size:9px;color:var(--accent);font-weight:700;">#${checkOrder+1}</span>` : ''}
-      </label>`;
+        <span class="multi-add-hint" style="font-size:10px;color:var(--muted);transition:color 0.1s;">+ add</span>
+      </div>`;
     }).join('');
   }
 
@@ -1065,7 +1080,6 @@ function buildRouteBody(r) {
     <div class="route-section-title">WAYPOINTS (${waypointItems.length})</div>
     ${buildSelectable(waypointItems) || '<div style="font-size:11px;color:var(--muted);padding:4px;">No matching waypoints</div>'}
   `;
-const selectedCount = (window._multiAddOrder?.[r.id] || []).length;
 
   return `
     <div class="side-tabs">
@@ -1079,17 +1093,16 @@ const selectedCount = (window._multiAddOrder?.[r.id] || []).length;
 
     <div class="card" style="padding:6px 8px;">
       <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">
-        Check stops/waypoints below in the order you want them added (creates ordered sequence ${selectedCount?`— ${selectedCount} selected`:''}).
+        Click a stop or waypoint below to add it to the sequence.
       </div>
       <div style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
         ${optHTML}
       </div>
       <div style="display:flex;gap:6px;margin-top:6px;">
-        <button class="btn btn-accent" style="flex:1;font-size:11px;" ${selectedCount?'':'disabled style="opacity:0.5;"'}
-          onclick="addSelectedToSide(${r.id},'${r.activeSide}')">
-          + Add Selected (${selectedCount})
+        <button class="btn btn-purple" style="flex:1;font-size:11px;"
+          onclick="window._routePickMode.active && window._routePickMode.routeId===${r.id} ? stopRouteMapPick(${r.id}) : startRouteMapPick(${r.id},'${r.activeSide}')">
+          ${window._routePickMode && window._routePickMode.active && window._routePickMode.routeId===r.id ? '🛑 Stop Picking' : '📍 Pick On Map'}
         </button>
-        <button class="btn btn-muted" style="font-size:11px;" onclick="clearMultiAdd(${r.id})">Clear</button>
       </div>
     </div>
 
@@ -1102,40 +1115,18 @@ const selectedCount = (window._multiAddOrder?.[r.id] || []).length;
 }
 
 // ════════════════════════════════════════════
-//  MULTI-SELECT ORDERED ADD
+//  CLICK-TO-ADD STOP TO ROUTE SIDE
 // ════════════════════════════════════════════
-window._multiAddOrder = {}; // routeId -> [stopId, ...] in check order
-
-function toggleMultiAdd(routeId, stopId, checked) {
-  window._multiAddOrder[routeId] = window._multiAddOrder[routeId] || [];
-  const order = window._multiAddOrder[routeId];
-  const idx = order.indexOf(stopId);
-  if (checked && idx === -1) {
-    order.push(stopId);
-  } else if (!checked && idx !== -1) {
-    order.splice(idx, 1);
-  }
-  rerenderRouteBody(routeId);
-}
-
-function clearMultiAdd(routeId) {
-  window._multiAddOrder[routeId] = [];
-  rerenderRouteBody(routeId);
-}
-
-function addSelectedToSide(routeId, side) {
-  const order = window._multiAddOrder?.[routeId] || [];
-  if (!order.length) return;
+function quickAddToSide(routeId, stopId) {
   const r = state.routes.find(x => x.id === routeId);
   if (!r) return;
-  const arr = side === 'A' ? r.sideA : r.sideB;
-  order.forEach(stopId => {
-    if (!arr.includes(stopId)) arr.push(stopId);
-  });
-  window._multiAddOrder[routeId] = [];
+  const arr = r.activeSide === 'A' ? r.sideA : r.sideB;
+  if (arr.includes(stopId)) return; // already in sequence, no-op
+  arr.push(stopId);
+  const s = state.stops.find(x => x.id === stopId);
   redrawRouteLines();
   rerenderRouteBody(routeId);
-  setStatus(`✅ Added ${order.length} stop(s)/waypoint(s) to Side ${side}`);
+  setStatus(`✅ Added "${s?.name || stopId}" to Side ${r.activeSide}`);
 }
 
 // ════════════════════════════════════════════
@@ -1446,6 +1437,50 @@ function clearHighlightStopMarker(stopId){
   try{s.marker.setZIndexOffset(0);}catch(e){}
 }
 
+function startRouteMapPick(routeId, side) {
+  window._routePickMode.active = true;
+  window._routePickMode.routeId = routeId;
+  window._routePickMode.side = side;
+
+  setStatus(`📍 Route Pick Mode: Click stops and waypoints for Side ${side}`);
+  rerenderRouteBody(routeId);
+}
+
+function stopRouteMapPick(routeId) {
+  window._routePickMode.active = false;
+  window._routePickMode.routeId = null;
+  window._routePickMode.side = null;
+
+  setStatus('Route pick mode disabled');
+  rerenderRouteBody(routeId);
+}
+
+function handleRouteMapPick(stopId) {
+  const pick = window._routePickMode;
+
+  if (!pick.active) return;
+
+  const route = state.routes.find(r => r.id === pick.routeId);
+  if (!route) return;
+
+  const arr = pick.side === 'A'
+    ? route.sideA
+    : route.sideB;
+
+  if (arr.includes(stopId)) return;
+
+  arr.push(stopId);
+
+  redrawRouteLines();
+  rerenderRouteBody(route.id);
+
+  const stop = state.stops.find(s => s.id === stopId);
+
+  setStatus(
+    `Added ${stop?.name || stopId} to Side ${pick.side}`
+  );
+}
+
 // ════════════════════════════════════════════
 //  TABS
 // ════════════════════════════════════════════
@@ -1467,7 +1502,7 @@ function toggleSim() {
 function startSim() {
   if (state.simRunning) return;
   state.simRunning = true;
-  document.getElementById('sim-btn').textContent = '■ Stop Sim';
+  document.getElementById('sim-btn').textContent = '■ Stop Simulation';
   document.getElementById('sim-btn').classList.add('running');
 
   state.simBuses = [];
@@ -1588,7 +1623,7 @@ function stopSim() {
   state.simRunning = false;
   clearInterval(state.simInterval);
   state.simInterval = null;
-  document.getElementById('sim-btn').textContent = '▶ Start Sim';
+  document.getElementById('sim-btn').textContent = '▶ Start Simulation';
   document.getElementById('sim-btn').classList.remove('running');
   state.simBuses.forEach(b => { if (b.marker) map.removeLayer(b.marker); });
   state.simBuses = [];
