@@ -6,3 +6,6 @@ Ever wanted to make your own bus routes in any city you want? Felt like MetroDre
 <li>Load and saving feature</li>
 <li>Waypoint marking for buses</li>
 <li>MTA inspired things mainly</li>
+
+# Jump in
+You can play it here: https://okmanbro2.github.io/ForTheBusGeeks/
