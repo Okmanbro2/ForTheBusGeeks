@@ -113,6 +113,8 @@
   /* ── Map ── */
   #map {
     flex: 1;
+    min-width: 0;     /* prevent flex overflow bleeding into panel */
+    height: 100%;     /* explicit height so Leaflet measures correctly */
     z-index: 1;
     cursor: crosshair;
   }
@@ -127,6 +129,8 @@
     flex-direction: column;
     overflow: hidden;
     flex-shrink: 0;
+    position: relative; /* establish stacking context above map */
+    z-index: 2;
   }
 
   .panel-tabs {
@@ -427,6 +431,7 @@ let selectedRouteType = 'local';
 //  MAP INIT
 // ════════════════════════════════════════════
 const map = L.map('map', { zoomControl: true }).setView([40.8448, -73.8648], 13); // Bronx
+setTimeout(() => map.invalidateSize(), 0); // re-measure after flex layout settles
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
