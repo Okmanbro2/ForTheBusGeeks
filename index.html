@@ -1,1 +1,931 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ForTheBusGeeks</title>
 
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+  /* ── Reset & Base ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #1a1d27;
+    --border:   #2c2f3f;
+    --accent:   #f5a623;      /* MTA amber */
+    --accent2:  #3b82f6;      /* SBS blue  */
+    --sbs:      #3b82f6;
+    --limited:  #f59e0b;
+    --local:    #22c55e;
+    --text:     #e8eaf0;
+    --muted:    #6b7280;
+    --danger:   #ef4444;
+    --panel-w:  320px;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Top Bar ── */
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 1000;
+  }
+
+  #topbar h1 {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .tool-group {
+    display: flex;
+    gap: 6px;
+    margin-left: 8px;
+  }
+
+  .tool-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .tool-btn:hover { border-color: var(--accent); color: var(--text); }
+  .tool-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  .sep { width: 1px; background: var(--border); height: 28px; margin: 0 4px; }
+
+  #sim-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+  #sim-btn {
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: none;
+    background: var(--local);
+    color: #000;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  #sim-btn.running { background: var(--danger); color: #fff; }
+
+  #speed-label { font-size: 11px; color: var(--muted); }
+  #speed-range { width: 80px; accent-color: var(--accent); }
+
+  /* ── Main Layout ── */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Map ── */
+  #map {
+    flex: 1;
+    z-index: 1;
+    cursor: crosshair;
+  }
+  #map.pan-mode { cursor: grab; }
+
+  /* ── Side Panel ── */
+  #panel {
+    width: var(--panel-w);
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .panel-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-tab {
+    flex: 1;
+    padding: 10px 0;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-content { display: none; flex: 1; overflow-y: auto; padding: 12px; }
+  .tab-content.active { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .card-title { font-size: 12px; font-weight: 700; color: var(--text); }
+
+  /* ── Forms ── */
+  label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 3px; }
+  input[type=text], input[type=number], select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 8px;
+    margin-bottom: 8px;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+
+  .type-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .chip {
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1.5px solid;
+    cursor: pointer;
+    transition: all 0.12s;
+    opacity: 0.45;
+  }
+  .chip.selected { opacity: 1; }
+  .chip.local  { border-color: var(--local);   color: var(--local); }
+  .chip.limited{ border-color: var(--limited); color: var(--limited); }
+  .chip.sbs    { border-color: var(--sbs);     color: var(--sbs); }
+  .chip.local.selected   { background: var(--local);   color: #000; }
+  .chip.limited.selected { background: var(--limited); color: #000; }
+  .chip.sbs.selected     { background: var(--sbs);     color: #fff; }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: none;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-accent  { background: var(--accent);  color: #000; }
+  .btn-danger  { background: var(--danger);  color: #fff; }
+  .btn-muted   { background: var(--border);  color: var(--text); }
+  .btn-full    { width: 100%; }
+
+  /* ── Stop list items ── */
+  .stop-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.12s;
+  }
+  .stop-item:hover { border-color: var(--accent); }
+  .stop-item .stop-dot {
+    width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+  }
+  .stop-item .stop-name { flex: 1; font-weight: 600; }
+  .stop-item .stop-tags { display: flex; gap: 3px; }
+  .tag {
+    font-size: 9px; font-weight: 700; padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .tag.local   { background: var(--local);   color: #000; }
+  .tag.limited { background: var(--limited); color: #000; }
+  .tag.sbs     { background: var(--sbs);     color: #fff; }
+  .stop-item .del-btn {
+    background: none; border: none; color: var(--danger);
+    font-size: 14px; cursor: pointer; line-height: 1; padding: 0 2px;
+  }
+
+  /* ── Route items ── */
+  .route-item {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .route-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: var(--bg);
+    cursor: pointer;
+  }
+  .route-badge {
+    font-size: 11px; font-weight: 800; padding: 2px 8px;
+    border-radius: 4px; color: #000;
+  }
+  .route-name { font-size: 12px; font-weight: 700; flex: 1; }
+  .route-expand { color: var(--muted); font-size: 12px; }
+  .route-body { display: none; padding: 10px; background: var(--surface); }
+  .route-body.open { display: block; }
+
+  .side-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  .side-tab {
+    flex: 1; padding: 4px 0; text-align: center; border-radius: 5px;
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--border); color: var(--muted);
+    transition: all 0.12s;
+  }
+  .side-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+  .stop-sequence { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .seq-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 6px; border-radius: 5px;
+    background: var(--bg); border: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .seq-num { color: var(--muted); font-size: 10px; width: 16px; text-align: right; }
+  .seq-name { flex: 1; font-weight: 600; }
+  .seq-remove {
+    background: none; border: none; color: var(--danger);
+    font-size: 13px; cursor: pointer; line-height: 1;
+  }
+
+  .add-stop-row { display: flex; gap: 6px; }
+  .add-stop-row select { margin-bottom: 0; flex: 1; }
+
+  .bus-config { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .bus-config label { margin: 0; white-space: nowrap; }
+  .bus-config input { width: 50px; margin: 0; }
+
+  /* ── Empty states ── */
+  .empty { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0; }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Leaflet overrides ── */
+  .leaflet-popup-content-wrapper {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .leaflet-popup-tip { background: var(--surface); }
+  .leaflet-popup-content { margin: 10px 14px; font-size: 12px; }
+
+  /* ── Status bar ── */
+  #statusbar {
+    height: 24px; line-height: 24px;
+    padding: 0 14px;
+    font-size: 11px;
+    color: var(--muted);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- ══ TOP BAR ══ -->
+<div id="topbar">
+  <h1>🚌 ForTheBusGeeks</h1>
+
+  <div class="sep"></div>
+
+  <div class="tool-group">
+    <button class="tool-btn" id="btn-pan"   onclick="setTool('pan')">✋ Pan</button>
+    <button class="tool-btn" id="btn-stop"  onclick="setTool('stop')">🔵 Add Stop</button>
+    <button class="tool-btn" id="btn-route" onclick="setTool('route')">➕ New Route</button>
+  </div>
+
+  <div class="sep"></div>
+
+  <div id="sim-controls">
+    <span id="speed-label">Speed</span>
+    <input type="range" id="speed-range" min="1" max="10" value="5" oninput="updateSpeed(this.value)" />
+    <button id="sim-btn" onclick="toggleSim()">▶ Start Sim</button>
+  </div>
+</div>
+
+<!-- ══ MAIN ══ -->
+<div id="main">
+  <div id="map"></div>
+
+  <!-- ══ SIDE PANEL ══ -->
+  <div id="panel">
+    <div class="panel-tabs">
+      <div class="panel-tab active" onclick="switchTab('stops')">Stops</div>
+      <div class="panel-tab"       onclick="switchTab('routes')">Routes</div>
+    </div>
+
+    <!-- STOPS TAB -->
+    <div class="tab-content active" id="tab-stops">
+      <div style="font-size:11px;color:var(--muted);">
+        Select <strong style="color:var(--text)">Add Stop</strong> then click the map to place stops.
+      </div>
+      <div id="stop-list"></div>
+    </div>
+
+    <!-- ROUTES TAB -->
+    <div class="tab-content" id="tab-routes">
+      <button class="btn btn-accent btn-full" onclick="openNewRouteForm()">➕ Create Route</button>
+
+      <!-- New Route Form -->
+      <div class="card" id="new-route-form" style="display:none;">
+        <div class="card-header">
+          <span class="card-title">New Route</span>
+          <button class="btn btn-muted" style="padding:2px 8px;font-size:11px;" onclick="closeNewRouteForm()">✕</button>
+        </div>
+        <label>Route Name</label>
+        <input type="text" id="nr-name" placeholder="e.g. Bx15" />
+        <label>Service Type</label>
+        <div class="type-chips" id="nr-type-chips">
+          <div class="chip local selected" onclick="selectRouteType('local')">Local</div>
+          <div class="chip limited"        onclick="selectRouteType('limited')">Limited</div>
+          <div class="chip sbs"            onclick="selectRouteType('sbs')">SBS</div>
+        </div>
+        <label>Route Color</label>
+        <input type="color" id="nr-color" value="#f5a623" style="width:48px;height:28px;padding:2px;background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;margin-bottom:8px;" />
+        <label>Buses on this route</label>
+        <input type="number" id="nr-buses" value="1" min="1" max="20" />
+        <button class="btn btn-accent btn-full" onclick="createRoute()">Create</button>
+      </div>
+
+      <div id="route-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div id="statusbar" id="status">Click the map to place stops • Select a tool above</div>
+
+<script>
+// ════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════
+const state = {
+  tool: 'pan',
+  stops: [],       // { id, name, lat, lng, types:[], marker }
+  routes: [],      // { id, name, type, color, buses:n, sideA:[], sideB:[], polyA, polyB, activeSide:'A' }
+  simRunning: false,
+  simBuses: [],    // { routeId, side, idx, t, marker, speed }
+  simInterval: null,
+  speedMult: 5,
+  stopIdCounter: 0,
+  routeIdCounter: 0,
+};
+
+let selectedRouteType = 'local';
+
+// ════════════════════════════════════════════
+//  MAP INIT
+// ════════════════════════════════════════════
+const map = L.map('map', { zoomControl: true }).setView([40.8448, -73.8648], 13); // Bronx
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
+  maxZoom: 19,
+}).addTo(map);
+
+map.on('click', onMapClick);
+
+// ════════════════════════════════════════════
+//  TOOL MANAGEMENT
+// ════════════════════════════════════════════
+function setTool(t) {
+  state.tool = t;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + t)?.classList.add('active');
+  const mapEl = document.getElementById('map');
+  mapEl.className = t === 'pan' ? 'pan-mode' : '';
+  setStatus(t === 'stop'  ? '🔵 Click the map to place a stop' :
+            t === 'route' ? '➕ Open Routes tab and create a route' :
+            '✋ Pan mode – drag to move map');
+}
+setTool('pan');
+
+// ════════════════════════════════════════════
+//  MAP CLICK
+// ════════════════════════════════════════════
+function onMapClick(e) {
+  if (state.tool !== 'stop') return;
+  openStopPopup(e.latlng);
+}
+
+function openStopPopup(latlng) {
+  const id = ++state.stopIdCounter;
+  const popup = L.popup({ closeOnClick: false, autoClose: false })
+    .setLatLng(latlng)
+    .setContent(buildStopPopupHTML(id))
+    .openOn(map);
+
+  // Store temp data
+  window._pendingStop = { id, latlng, popup };
+}
+
+function buildStopPopupHTML(id) {
+  return `
+    <div style="min-width:180px;">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Configure Stop</div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">Stop Name</div>
+      <input id="ps-name-${id}" type="text" placeholder="e.g. Fordham Rd / 3rd Av"
+        style="width:100%;background:#0f1117;border:1px solid #2c2f3f;border-radius:5px;
+               color:#e8eaf0;font-size:12px;padding:5px 8px;margin-bottom:8px;outline:none;" />
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:5px;">Service types at this stop</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <div class="chip local"    id="ps-local-${id}"   onclick="togglePopupChip(${id},'local')"   style="opacity:0.45;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #22c55e;color:#22c55e;cursor:pointer;">Local</div>
+        <div class="chip limited"  id="ps-limited-${id}" onclick="togglePopupChip(${id},'limited')" style="opacity:0.45;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #f59e0b;color:#f59e0b;cursor:pointer;">Limited</div>
+        <div class="chip sbs"      id="ps-sbs-${id}"     onclick="togglePopupChip(${id},'sbs')"     style="opacity:0.45;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #3b82f6;color:#3b82f6;cursor:pointer;">SBS</div>
+      </div>
+      <button onclick="confirmStop(${id})"
+        style="width:100%;background:#f5a623;color:#000;border:none;border-radius:6px;
+               padding:6px;font-size:12px;font-weight:700;cursor:pointer;">
+        Place Stop
+      </button>
+    </div>`;
+}
+
+window._popupChips = {};
+function togglePopupChip(id, type) {
+  const key = `${id}-${type}`;
+  const el = document.getElementById(`ps-${type}-${id}`);
+  if (!el) return;
+  const on = !window._popupChips[key];
+  window._popupChips[key] = on;
+  el.style.opacity = on ? '1' : '0.45';
+  const bg = type === 'local' ? '#22c55e' : type === 'limited' ? '#f59e0b' : '#3b82f6';
+  el.style.background = on ? bg : 'transparent';
+  el.style.color = on ? (type === 'sbs' ? '#fff' : '#000') : bg;
+}
+
+function confirmStop(id) {
+  const p = window._pendingStop;
+  if (!p || p.id !== id) return;
+
+  const nameEl = document.getElementById(`ps-name-${id}`);
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { alert('Please enter a stop name.'); return; }
+
+  const types = ['local','limited','sbs'].filter(t => window._popupChips[`${id}-${t}`]);
+  if (!types.length) { alert('Select at least one service type.'); return; }
+
+  const stop = {
+    id,
+    name,
+    lat: p.latlng.lat,
+    lng: p.latlng.lng,
+    types,
+    marker: null,
+  };
+
+  // Build marker with stacked color
+  const color = typeColor(types[0]);
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      box-shadow:0 0 4px rgba(0,0,0,0.6);
+    "></div>`,
+    iconSize: [14,14],
+    iconAnchor: [7,7],
+  });
+
+  stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
+    .addTo(map)
+    .bindTooltip(name, { permanent: false, direction: 'top', offset: [0,-8] });
+
+  stop.marker.on('dragend', () => {
+    const ll = stop.marker.getLatLng();
+    stop.lat = ll.lat; stop.lng = ll.lng;
+    redrawRouteLines();
+  });
+
+  stop.marker.on('contextmenu', () => deleteStop(stop.id));
+
+  state.stops.push(stop);
+  map.closePopup();
+  renderStopList();
+  renderRouteList();
+  setStatus(`✅ Stop "${name}" added (${types.join(', ')})`);
+}
+
+function typeColor(t) {
+  return t === 'sbs' ? '#3b82f6' : t === 'limited' ? '#f59e0b' : '#22c55e';
+}
+
+function deleteStop(id) {
+  const idx = state.stops.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  const stop = state.stops[idx];
+  if (stop.marker) map.removeLayer(stop.marker);
+  state.stops.splice(idx, 1);
+  // Remove from routes
+  state.routes.forEach(r => {
+    r.sideA = r.sideA.filter(sid => sid !== id);
+    r.sideB = r.sideB.filter(sid => sid !== id);
+  });
+  redrawRouteLines();
+  renderStopList();
+  renderRouteList();
+}
+
+// ════════════════════════════════════════════
+//  STOP LIST RENDER
+// ════════════════════════════════════════════
+function renderStopList() {
+  const el = document.getElementById('stop-list');
+  if (!state.stops.length) {
+    el.innerHTML = '<div class="empty">No stops placed yet.<br/>Select "Add Stop" and click the map.</div>';
+    return;
+  }
+  el.innerHTML = state.stops.map(s => `
+    <div class="stop-item" onclick="focusStop(${s.id})">
+      <div class="stop-dot" style="background:${typeColor(s.types[0])};"></div>
+      <span class="stop-name">${s.name}</span>
+      <span class="stop-tags">${s.types.map(t => `<span class="tag ${t}">${t.toUpperCase()}</span>`).join('')}</span>
+      <button class="del-btn" onclick="event.stopPropagation();deleteStop(${s.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+function focusStop(id) {
+  const s = state.stops.find(x => x.id === id);
+  if (s) map.setView([s.lat, s.lng], 16);
+}
+
+// ════════════════════════════════════════════
+//  ROUTE MANAGEMENT
+// ════════════════════════════════════════════
+function openNewRouteForm() {
+  switchTab('routes');
+  document.getElementById('new-route-form').style.display = 'block';
+}
+function closeNewRouteForm() {
+  document.getElementById('new-route-form').style.display = 'none';
+}
+
+function selectRouteType(t) {
+  selectedRouteType = t;
+  document.querySelectorAll('#nr-type-chips .chip').forEach(c => c.classList.remove('selected'));
+  document.querySelector(`#nr-type-chips .chip.${t}`).classList.add('selected');
+}
+
+function createRoute() {
+  const name  = document.getElementById('nr-name').value.trim();
+  const color = document.getElementById('nr-color').value;
+  const buses = parseInt(document.getElementById('nr-buses').value) || 1;
+  if (!name) { alert('Enter a route name.'); return; }
+
+  const route = {
+    id: ++state.routeIdCounter,
+    name,
+    type: selectedRouteType,
+    color,
+    buses,
+    sideA: [],
+    sideB: [],
+    polyA: null,
+    polyB: null,
+    activeSide: 'A',
+  };
+  state.routes.push(route);
+  closeNewRouteForm();
+  document.getElementById('nr-name').value = '';
+  renderRouteList();
+  setStatus(`🛣 Route "${name}" created — add stops in Routes tab`);
+}
+
+function deleteRoute(id) {
+  const idx = state.routes.findIndex(r => r.id === id);
+  if (idx === -1) return;
+  const r = state.routes[idx];
+  if (r.polyA) map.removeLayer(r.polyA);
+  if (r.polyB) map.removeLayer(r.polyB);
+  state.routes.splice(idx, 1);
+  renderRouteList();
+}
+
+function addStopToSide(routeId, side, stopId) {
+  const r = state.routes.find(x => x.id === routeId);
+  const sid = parseInt(stopId);
+  if (!r || !sid) return;
+  const arr = side === 'A' ? r.sideA : r.sideB;
+  if (!arr.includes(sid)) {
+    arr.push(sid);
+    redrawRouteLines();
+    renderRouteList();
+  }
+}
+
+function removeStopFromSide(routeId, side, stopId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  const arr = side === 'A' ? r.sideA : r.sideB;
+  const idx = arr.indexOf(stopId);
+  if (idx !== -1) { arr.splice(idx, 1); redrawRouteLines(); renderRouteList(); }
+}
+
+function setActiveSide(routeId, side) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (r) { r.activeSide = side; renderRouteList(); }
+}
+
+// ════════════════════════════════════════════
+//  ROUTE LINES ON MAP
+// ════════════════════════════════════════════
+function redrawRouteLines() {
+  state.routes.forEach(r => {
+    if (r.polyA) { map.removeLayer(r.polyA); r.polyA = null; }
+    if (r.polyB) { map.removeLayer(r.polyB); r.polyB = null; }
+
+    const toLatLng = id => {
+      const s = state.stops.find(x => x.id === id);
+      return s ? [s.lat, s.lng] : null;
+    };
+
+    const coordsA = r.sideA.map(toLatLng).filter(Boolean);
+    const coordsB = r.sideB.map(toLatLng).filter(Boolean);
+
+    if (coordsA.length > 1) {
+      r.polyA = L.polyline(coordsA, {
+        color: r.color, weight: 4, opacity: 0.85,
+        dashArray: r.type === 'limited' ? '8,6' : r.type === 'sbs' ? null : null,
+      }).addTo(map).bindTooltip(`${r.name} — Side A`, { sticky: true });
+    }
+    if (coordsB.length > 1) {
+      r.polyB = L.polyline(coordsB, {
+        color: r.color, weight: 4, opacity: 0.6,
+        dashArray: '4,4',
+      }).addTo(map).bindTooltip(`${r.name} — Side B`, { sticky: true });
+    }
+  });
+}
+
+// ════════════════════════════════════════════
+//  ROUTE LIST RENDER
+// ════════════════════════════════════════════
+function renderRouteList() {
+  const el = document.getElementById('route-list');
+  if (!state.routes.length) {
+    el.innerHTML = '<div class="empty">No routes yet.<br/>Click "Create Route" above.</div>';
+    return;
+  }
+
+  el.innerHTML = state.routes.map(r => {
+    const side = r.activeSide;
+    const arr  = side === 'A' ? r.sideA : r.sideB;
+
+    // Eligible stops for this route type
+    const eligible = state.stops.filter(s => s.types.includes(r.type));
+
+    const seqHTML = arr.length
+      ? arr.map((sid, i) => {
+          const s = state.stops.find(x => x.id === sid);
+          if (!s) return '';
+          return `<div class="seq-item">
+            <span class="seq-num">${i+1}</span>
+            <span class="seq-name">${s.name}</span>
+            <span class="stop-tags">${s.types.map(t=>`<span class="tag ${t}">${t.toUpperCase()}</span>`).join('')}</span>
+            <button class="seq-remove" onclick="removeStopFromSide(${r.id},'${side}',${sid})">✕</button>
+          </div>`;
+        }).join('')
+      : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No stops added yet.</div>';
+
+    const optHTML = eligible.length
+      ? eligible.filter(s => !arr.includes(s.id)).map(s =>
+          `<option value="${s.id}">${s.name} (${s.types.join('/')})</option>`
+        ).join('')
+      : '<option disabled>No eligible stops</option>';
+
+    return `
+      <div class="route-item" id="ri-${r.id}">
+        <div class="route-header" onclick="toggleRouteBody(${r.id})">
+          <div class="route-badge" style="background:${r.color};">${r.name}</div>
+          <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
+          <span class="route-name"></span>
+          <span style="font-size:10px;color:var(--muted);">${r.buses} bus${r.buses>1?'es':''}</span>
+          <span class="route-expand">▾</span>
+        </div>
+        <div class="route-body" id="rb-${r.id}">
+          <div class="side-tabs">
+            <div class="side-tab ${side==='A'?'active':''}" onclick="setActiveSide(${r.id},'A')">Side A</div>
+            <div class="side-tab ${side==='B'?'active':''}" onclick="setActiveSide(${r.id},'B')">Side B</div>
+          </div>
+
+          <div class="stop-sequence">${seqHTML}</div>
+
+          <div class="add-stop-row">
+            <select id="add-sel-${r.id}-${side}">
+              <option value="">— add stop —</option>
+              ${optHTML}
+            </select>
+            <button class="btn btn-accent" style="padding:4px 10px;"
+              onclick="addStopToSide(${r.id},'${side}',document.getElementById('add-sel-${r.id}-${side}').value)">
+              +
+            </button>
+          </div>
+
+          <div style="margin-top:10px;display:flex;gap:6px;">
+            <button class="btn btn-muted" style="flex:1;font-size:11px;"
+              onclick="map.fitBounds(getRouteBounds(${r.id}))">🗺 Focus</button>
+            <button class="btn btn-danger" style="flex:1;font-size:11px;"
+              onclick="deleteRoute(${r.id})">🗑 Delete</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleRouteBody(id) {
+  const el = document.getElementById(`rb-${id}`);
+  if (el) el.classList.toggle('open');
+}
+
+function getRouteBounds(id) {
+  const r = state.routes.find(x => x.id === id);
+  if (!r) return null;
+  const all = [...r.sideA, ...r.sideB];
+  const coords = all.map(sid => {
+    const s = state.stops.find(x => x.id === sid);
+    return s ? [s.lat, s.lng] : null;
+  }).filter(Boolean);
+  return coords.length ? L.latLngBounds(coords) : null;
+}
+
+// ════════════════════════════════════════════
+//  TABS
+// ════════════════════════════════════════════
+function switchTab(name) {
+  document.querySelectorAll('.panel-tab').forEach((t,i) => {
+    t.classList.toggle('active', (i===0&&name==='stops')||(i===1&&name==='routes'));
+  });
+  document.getElementById('tab-stops').classList.toggle('active', name==='stops');
+  document.getElementById('tab-routes').classList.toggle('active', name==='routes');
+}
+
+// ════════════════════════════════════════════
+//  SIMULATION
+// ════════════════════════════════════════════
+function toggleSim() {
+  state.simRunning ? stopSim() : startSim();
+}
+
+function startSim() {
+  if (state.simRunning) return;
+  state.simRunning = true;
+  document.getElementById('sim-btn').textContent = '■ Stop Sim';
+  document.getElementById('sim-btn').classList.add('running');
+
+  // Spawn buses
+  state.simBuses = [];
+  state.routes.forEach(r => {
+    const stopsA = r.sideA.map(id => state.stops.find(s=>s.id===id)).filter(Boolean);
+    const stopsB = r.sideB.map(id => state.stops.find(s=>s.id===id)).filter(Boolean);
+
+    for (let i = 0; i < r.buses; i++) {
+      // Alternate buses between sides
+      const side  = i % 2 === 0 ? 'A' : 'B';
+      const stops = side === 'A' ? stopsA : stopsB;
+      if (stops.length < 2) continue;
+
+      const offset = i / r.buses; // stagger start
+      const bus = {
+        routeId: r.id,
+        color:   r.color,
+        type:    r.type,
+        side,
+        stops,
+        segIdx:  0,
+        t:       offset % 1,
+        marker:  null,
+        forward: true,
+      };
+
+      // Advance to correct segment from offset
+      const totalSegs = stops.length - 1;
+      const absT = offset * totalSegs;
+      bus.segIdx = Math.floor(absT) % totalSegs;
+      bus.t      = absT - Math.floor(absT);
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:18px;height:18px;border-radius:4px;
+          background:${r.color};border:2px solid #fff;
+          display:flex;align-items:center;justify-content:center;
+          font-size:9px;font-weight:900;color:${r.type==='sbs'?'#fff':'#000'};
+          box-shadow:0 2px 6px rgba(0,0,0,0.7);
+        ">${r.type==='sbs'?'S':r.type==='limited'?'L':'B'}</div>`,
+        iconSize: [18,18], iconAnchor: [9,9],
+      });
+
+      const startStop = stops[bus.segIdx];
+      bus.marker = L.marker([startStop.lat, startStop.lng], { icon, zIndexOffset: 500 })
+        .addTo(map)
+        .bindTooltip(`${r.name} (${side})`, { permanent: false, direction: 'top' });
+
+      state.simBuses.push(bus);
+    }
+  });
+
+  // Animation loop
+  const TICK = 50; // ms
+  state.simInterval = setInterval(() => {
+    const step = (state.speedMult * 0.0004);
+    state.simBuses.forEach(bus => {
+      if (bus.stops.length < 2) return;
+      bus.t += step;
+      if (bus.t >= 1) {
+        bus.t = 0;
+        bus.segIdx++;
+        if (bus.segIdx >= bus.stops.length - 1) {
+          bus.segIdx = 0; // loop
+        }
+      }
+      const a = bus.stops[bus.segIdx];
+      const b = bus.stops[Math.min(bus.segIdx + 1, bus.stops.length - 1)];
+      const lat = a.lat + (b.lat - a.lat) * bus.t;
+      const lng = a.lng + (b.lng - a.lng) * bus.t;
+      bus.marker.setLatLng([lat, lng]);
+    });
+  }, TICK);
+
+  setStatus('▶ Simulation running — buses are moving!');
+}
+
+function stopSim() {
+  state.simRunning = false;
+  clearInterval(state.simInterval);
+  state.simInterval = null;
+  document.getElementById('sim-btn').textContent = '▶ Start Sim';
+  document.getElementById('sim-btn').classList.remove('running');
+
+  state.simBuses.forEach(b => { if (b.marker) map.removeLayer(b.marker); });
+  state.simBuses = [];
+  setStatus('■ Simulation stopped.');
+}
+
+function updateSpeed(v) {
+  state.speedMult = parseInt(v);
+}
+
+// ════════════════════════════════════════════
+//  UTIL
+// ════════════════════════════════════════════
+function setStatus(msg) {
+  document.getElementById('statusbar').textContent = msg;
+}
+
+// Init renders
+renderStopList();
+renderRouteList();
+</script>
+</body>
+</html>
