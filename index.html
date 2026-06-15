@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ForTheBusGeeks</title>
+<title>FOR THE BUS GEEKS</title>
 
 <!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -353,6 +353,12 @@
   .leaflet-popup-tip { background: var(--surface); }
   .leaflet-popup-content { margin: 10px 14px; font-size: 12px; }
 
+  
+.route-search{margin-bottom:6px;}
+.route-section-title{font-size:10px;font-weight:700;color:var(--muted);margin:6px 0 4px;}
+.multi-add-item:hover{background:rgba(255,255,255,0.05);}
+
+
   /* ── Status bar ── */
   #statusbar {
     height: 24px; line-height: 24px;
@@ -369,7 +375,7 @@
 
 <!-- ══ TOP BAR ══ -->
 <div id="topbar">
-  <h1>🚌 ForTheBusGeeks</h1>
+  <h1>For The Bus Geeks: The Website I've Always Ever Wanted</h1>
 
   <div class="sep"></div>
 
@@ -472,6 +478,7 @@ const state = {
 let selectedRouteType = 'local';
 // Track which seq-item is currently being edited: { routeId, side, stopId }
 let editingSeqItem = null;
+window._routeSearch = {};
 
 // ════════════════════════════════════════════
 //  MAP INIT
@@ -552,6 +559,18 @@ function openStopPopup(latlng, isWaypoint) {
     .openOn(map);
 
   window._pendingStop = { id, latlng, popup, isWaypoint };
+
+  if (!isWaypoint) {
+    setTimeout(() => {
+      window._popupChips[`${id}-local`] = true;
+      const el = document.getElementById(`ps-local-${id}`);
+      if (el) {
+        el.style.opacity = '1';
+        el.style.background = '#22c55e';
+        el.style.color = '#000';
+      }
+    }, 0);
+  }
 }
 
 function buildStopPopupHTML(id, isWaypoint) {
@@ -670,7 +689,7 @@ function confirmStop(id) {
   const name = nameEl ? nameEl.value.trim() : '';
 
   if (p.isWaypoint) {
-    const label = name || `WP${id}`;
+    const label = name || `Waypoint ${id}`;
     const stop = {
       id,
       name: label,
@@ -980,6 +999,7 @@ function buildRouteBody(r) {
 
   // Eligible: stops matching route type OR waypoints (always eligible)
   const eligible = state.stops.filter(s => s.isWaypoint || s.types.includes(r.type));
+  const searchTerm = (window._routeSearch?.[r.id] || '').toLowerCase().trim();
 
   const seqHTML = arr.length
     ? arr.map((sid, i) => {
@@ -1012,22 +1032,40 @@ function buildRouteBody(r) {
       }).join('')
     : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No stops added yet.</div>';
 
-  const optHTML = eligible.length
-    ? eligible.filter(s => !arr.includes(s.id)).map(s => {
-        const checkOrder = (window._multiAddOrder?.[r.id] || []).indexOf(s.id);
-        const checked = checkOrder !== -1;
-        const label = `${s.isWaypoint?'◆ ':''}${s.name}${s.isWaypoint?'':' ('+s.types.join('/')+')'}`;
-        return `
-          <label class="multi-add-item" style="display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;font-size:11px;cursor:pointer;${checked?'background:rgba(245,166,35,0.12);':''}">
-            <input type="checkbox" style="width:auto;margin:0;" ${checked?'checked':''}
-              onchange="toggleMultiAdd(${r.id},${s.id},this.checked)" />
-            <span style="flex:1;${s.isWaypoint?'color:#c4b5fd;':''}">${label}</span>
-            ${checked ? `<span style="font-size:9px;color:var(--accent);font-weight:700;">#${checkOrder+1}</span>` : ''}
-          </label>`;
-      }).join('')
-    : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No eligible stops</div>';
+  const filteredEligible = eligible.filter(s =>
+    !searchTerm || s.name.toLowerCase().includes(searchTerm)
+  );
+  const stopItems = filteredEligible.filter(s=>!s.isWaypoint);
+  const waypointItems = filteredEligible.filter(s=>s.isWaypoint);
 
-  const selectedCount = (window._multiAddOrder?.[r.id] || []).length;
+  function buildSelectable(items){
+    return items.filter(s => !arr.includes(s.id)).map(s => {
+      const checkOrder = (window._multiAddOrder?.[r.id] || []).indexOf(s.id);
+      const checked = checkOrder !== -1;
+      const label = `${s.isWaypoint?'◆ ':''}${s.name}${s.isWaypoint?'':' ('+s.types.join('/')+')'}`;
+      return `
+      <label class="multi-add-item"
+        onmouseenter="highlightStopMarker(${s.id})"
+        onmouseleave="clearHighlightStopMarker(${s.id})"
+        style="display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;font-size:11px;cursor:pointer;${checked?'background:rgba(245,166,35,0.12);':''}">
+        <input type="checkbox" style="width:auto;margin:0;" ${checked?'checked':''}
+          onchange="toggleMultiAdd(${r.id},${s.id},this.checked)" />
+        <span style="flex:1;${s.isWaypoint?'color:#c4b5fd;':''}">${label}</span>
+        ${checked ? `<span style="font-size:9px;color:var(--accent);font-weight:700;">#${checkOrder+1}</span>` : ''}
+      </label>`;
+    }).join('');
+  }
+
+  const optHTML = `
+    <input class="route-search" type="text" placeholder="🔍 Search stops and waypoints..."
+      value="${window._routeSearch?.[r.id] || ''}"
+      oninput="updateRouteSearch(${r.id}, this.value)" />
+    <div class="route-section-title">BUS STOPS (${stopItems.length})</div>
+    ${buildSelectable(stopItems) || '<div style="font-size:11px;color:var(--muted);padding:4px;">No matching stops</div>'}
+    <div class="route-section-title">WAYPOINTS (${waypointItems.length})</div>
+    ${buildSelectable(waypointItems) || '<div style="font-size:11px;color:var(--muted);padding:4px;">No matching waypoints</div>'}
+  `;
+const selectedCount = (window._multiAddOrder?.[r.id] || []).length;
 
   return `
     <div class="side-tabs">
@@ -1385,6 +1423,27 @@ function getBusLabel(name) {
   // No digits at all — fall back to the first word, truncated
   const firstWord = trimmed.split(/\s+/)[0];
   return firstWord.length > 10 ? firstWord.slice(0, 10) : firstWord;
+}
+
+
+function updateRouteSearch(routeId, value){
+  window._routeSearch = window._routeSearch || {};
+  window._routeSearch[routeId] = value;
+  rerenderRouteBody(routeId);
+}
+
+function highlightStopMarker(stopId){
+  const s = state.stops.find(x=>x.id===stopId);
+  if(!s || !s.marker) return;
+  s.marker.openTooltip();
+  try{s.marker.setZIndexOffset(2000);}catch(e){}
+}
+
+function clearHighlightStopMarker(stopId){
+  const s = state.stops.find(x=>x.id===stopId);
+  if(!s || !s.marker) return;
+  try{s.marker.closeTooltip();}catch(e){}
+  try{s.marker.setZIndexOffset(0);}catch(e){}
 }
 
 // ════════════════════════════════════════════
