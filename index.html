@@ -383,6 +383,14 @@
 
   <div class="sep"></div>
 
+  <div class="tool-group">
+    <button class="tool-btn" id="btn-save" onclick="saveToFile()">💾 Save</button>
+    <button class="tool-btn" id="btn-load" onclick="document.getElementById('load-file-input').click()">📂 Load</button>
+    <input type="file" id="load-file-input" accept="application/json" style="display:none;" onchange="loadFromFile(event)" />
+  </div>
+
+  <div class="sep"></div>
+
   <div id="sim-controls">
     <span id="speed-label">Speed</span>
     <input type="range" id="speed-range" min="1" max="10" value="5" oninput="updateSpeed(this.value)" />
@@ -477,6 +485,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 map.on('click', onMapClick);
+map.on('zoomend', () => redrawRouteLines());
 
 // ════════════════════════════════════════════
 //  TOOL MANAGEMENT
@@ -596,6 +605,63 @@ function togglePopupChip(id, type) {
   el.style.color = on ? (type === 'sbs' ? '#fff' : '#000') : bg;
 }
 
+// Create and attach a Leaflet marker for a stop/waypoint object (mutates stop.marker).
+// Used both when placing new stops and when reconstructing from a loaded save file.
+function createStopMarker(stop) {
+  if (stop.isWaypoint) {
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:10px;height:10px;
+        background:#8b5cf6;
+        transform:rotate(45deg);
+        border:1.5px solid #fff;
+        box-shadow:0 0 4px rgba(139,92,246,0.7);
+      "></div>`,
+      iconSize: [10,10],
+      iconAnchor: [5,5],
+    });
+    stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
+      .addTo(map)
+      .bindTooltip(`◆ ${stop.name}`, { permanent: false, direction: 'top', offset: [0,-8] });
+    stop.marker.on('dragend', () => {
+      const ll = stop.marker.getLatLng();
+      stop.lat = ll.lat; stop.lng = ll.lng;
+      redrawRouteLines();
+    });
+    stop.marker.on('contextmenu', () => deleteStop(stop.id));
+    if (!state.waypointsVisible) map.removeLayer(stop.marker);
+    return;
+  }
+
+  const color = typeColor(stop.types[0]);
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      box-shadow:0 0 4px rgba(0,0,0,0.6);
+    "></div>`,
+    iconSize: [14,14],
+    iconAnchor: [7,7],
+  });
+
+  stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
+    .addTo(map)
+    .bindTooltip(stop.name, { permanent: false, direction: 'top', offset: [0,-8] });
+
+  stop.marker.on('dragend', () => {
+    const ll = stop.marker.getLatLng();
+    stop.lat = ll.lat; stop.lng = ll.lng;
+    redrawRouteLines();
+  });
+
+  stop.marker.on('contextmenu', (e) => {
+    L.DomEvent.stopPropagation(e);
+    openEditStopPopup(stop);
+  });
+}
+
 function confirmStop(id) {
   const p = window._pendingStop;
   if (!p || p.id !== id) return;
@@ -614,27 +680,7 @@ function confirmStop(id) {
       marker: null,
       isWaypoint: true,
     };
-    const icon = L.divIcon({
-      className: '',
-      html: `<div style="
-        width:10px;height:10px;
-        background:#8b5cf6;
-        transform:rotate(45deg);
-        border:1.5px solid #fff;
-        box-shadow:0 0 4px rgba(139,92,246,0.7);
-      "></div>`,
-      iconSize: [10,10],
-      iconAnchor: [5,5],
-    });
-    stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
-      .addTo(map)
-      .bindTooltip(`◆ ${label}`, { permanent: false, direction: 'top', offset: [0,-8] });
-    stop.marker.on('dragend', () => {
-      const ll = stop.marker.getLatLng();
-      stop.lat = ll.lat; stop.lng = ll.lng;
-      redrawRouteLines();
-    });
-    stop.marker.on('contextmenu', () => deleteStop(stop.id));
+    createStopMarker(stop);
     state.stops.push(stop);
     map.closePopup();
     renderStopList();
@@ -656,34 +702,7 @@ function confirmStop(id) {
     isWaypoint: false,
   };
 
-  const color = typeColor(types[0]);
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="
-      width:14px;height:14px;border-radius:50%;
-      background:${color};border:2px solid #fff;
-      box-shadow:0 0 4px rgba(0,0,0,0.6);
-    "></div>`,
-    iconSize: [14,14],
-    iconAnchor: [7,7],
-  });
-
-  stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
-    .addTo(map)
-    .bindTooltip(name, { permanent: false, direction: 'top', offset: [0,-8] });
-
-  stop.marker.on('dragend', () => {
-    const ll = stop.marker.getLatLng();
-    stop.lat = ll.lat; stop.lng = ll.lng;
-    redrawRouteLines();
-  });
-
-  // Right-click to open edit popup
-  stop.marker.on('contextmenu', (e) => {
-    L.DomEvent.stopPropagation(e);
-    openEditStopPopup(stop);
-  });
-
+  createStopMarker(stop);
   state.stops.push(stop);
   map.closePopup();
   renderStopList();
@@ -872,7 +891,9 @@ function createRoute() {
     sideA: [],   // array of stopIds (stops + waypoints)
     sideB: [],
     polyA: null,
+    polysA: [],
     polyB: null,
+    polysB: [],
     activeSide: 'A',
   };
   state.routes.push(route);
@@ -886,24 +907,14 @@ function deleteRoute(id) {
   const idx = state.routes.findIndex(r => r.id === id);
   if (idx === -1) return;
   const r = state.routes[idx];
+  if (!confirm(`Delete route "${r.name}"? This cannot be undone.`)) return;
   if (r.polyA) map.removeLayer(r.polyA);
+  if (r.polysA) r.polysA.forEach(p => map.removeLayer(p));
   if (r.polyB) map.removeLayer(r.polyB);
+  if (r.polysB) r.polysB.forEach(p => map.removeLayer(p));
   state.routes.splice(idx, 1);
   renderRouteList();
-}
-
-function addStopToSide(routeId, side, stopId) {
-  stopId = parseInt(stopId);
-  if (!stopId) return;
-  const r = state.routes.find(x => x.id === routeId);
-  if (!r) return;
-  const arr = side === 'A' ? r.sideA : r.sideB;
-  if (!arr.includes(stopId)) {
-    arr.push(stopId);
-    redrawRouteLines();
-    // Re-render only the specific route body without closing it
-    rerenderRouteBody(routeId);
-  }
+  setStatus(`🗑 Route "${r.name}" deleted`);
 }
 
 function removeStopFromSide(routeId, side, stopId) {
@@ -1002,10 +1013,21 @@ function buildRouteBody(r) {
     : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No stops added yet.</div>';
 
   const optHTML = eligible.length
-    ? eligible.filter(s => !arr.includes(s.id)).map(s =>
-        `<option value="${s.id}">${s.isWaypoint?'◆ ':''}${s.name}${s.isWaypoint?'':' ('+s.types.join('/')+')'}</option>`
-      ).join('')
-    : '<option disabled>No eligible stops</option>';
+    ? eligible.filter(s => !arr.includes(s.id)).map(s => {
+        const checkOrder = (window._multiAddOrder?.[r.id] || []).indexOf(s.id);
+        const checked = checkOrder !== -1;
+        const label = `${s.isWaypoint?'◆ ':''}${s.name}${s.isWaypoint?'':' ('+s.types.join('/')+')'}`;
+        return `
+          <label class="multi-add-item" style="display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:4px;font-size:11px;cursor:pointer;${checked?'background:rgba(245,166,35,0.12);':''}">
+            <input type="checkbox" style="width:auto;margin:0;" ${checked?'checked':''}
+              onchange="toggleMultiAdd(${r.id},${s.id},this.checked)" />
+            <span style="flex:1;${s.isWaypoint?'color:#c4b5fd;':''}">${label}</span>
+            ${checked ? `<span style="font-size:9px;color:var(--accent);font-weight:700;">#${checkOrder+1}</span>` : ''}
+          </label>`;
+      }).join('')
+    : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No eligible stops</div>';
+
+  const selectedCount = (window._multiAddOrder?.[r.id] || []).length;
 
   return `
     <div class="side-tabs">
@@ -1017,15 +1039,20 @@ function buildRouteBody(r) {
 
     <div class="stop-sequence">${seqHTML}</div>
 
-    <div class="add-stop-row">
-      <select id="add-sel-${r.id}">
-        <option value="">— add stop/waypoint —</option>
+    <div class="card" style="padding:6px 8px;">
+      <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">
+        Check stops/waypoints below in the order you want them added (creates ordered sequence ${selectedCount?`— ${selectedCount} selected`:''}).
+      </div>
+      <div style="max-height:160px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;">
         ${optHTML}
-      </select>
-      <button class="btn btn-accent" style="padding:4px 10px;"
-        onclick="addStopToSide(${r.id},'${r.activeSide}',document.getElementById('add-sel-${r.id}').value)">
-        +
-      </button>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <button class="btn btn-accent" style="flex:1;font-size:11px;" ${selectedCount?'':'disabled style="opacity:0.5;"'}
+          onclick="addSelectedToSide(${r.id},'${r.activeSide}')">
+          + Add Selected (${selectedCount})
+        </button>
+        <button class="btn btn-muted" style="font-size:11px;" onclick="clearMultiAdd(${r.id})">Clear</button>
+      </div>
     </div>
 
     <div style="margin-top:10px;display:flex;gap:6px;">
@@ -1037,34 +1064,100 @@ function buildRouteBody(r) {
 }
 
 // ════════════════════════════════════════════
-//  ROUTE LINES ON MAP
-//  Side B: dashed ONLY where it diverges from Side A
+//  MULTI-SELECT ORDERED ADD
 // ════════════════════════════════════════════
+window._multiAddOrder = {}; // routeId -> [stopId, ...] in check order
+
+function toggleMultiAdd(routeId, stopId, checked) {
+  window._multiAddOrder[routeId] = window._multiAddOrder[routeId] || [];
+  const order = window._multiAddOrder[routeId];
+  const idx = order.indexOf(stopId);
+  if (checked && idx === -1) {
+    order.push(stopId);
+  } else if (!checked && idx !== -1) {
+    order.splice(idx, 1);
+  }
+  rerenderRouteBody(routeId);
+}
+
+function clearMultiAdd(routeId) {
+  window._multiAddOrder[routeId] = [];
+  rerenderRouteBody(routeId);
+}
+
+function addSelectedToSide(routeId, side) {
+  const order = window._multiAddOrder?.[routeId] || [];
+  if (!order.length) return;
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  const arr = side === 'A' ? r.sideA : r.sideB;
+  order.forEach(stopId => {
+    if (!arr.includes(stopId)) arr.push(stopId);
+  });
+  window._multiAddOrder[routeId] = [];
+  redrawRouteLines();
+  rerenderRouteBody(routeId);
+  setStatus(`✅ Added ${order.length} stop(s)/waypoint(s) to Side ${side}`);
+}
+
+// ════════════════════════════════════════════
+//  ROUTE LINES ON MAP
+//  - Side B: dashed ONLY where it diverges from Side A
+//  - Overlapping routes (same edge shared by multiple routes/sides)
+//    are drawn as parallel offset lines so they don't stack
+//  - Hover shows a stats tooltip (length, bus count) for that route
+// ════════════════════════════════════════════
+
+const EDGE_OFFSET_PX = 5; // pixel spacing between parallel overlapping lines
+
 function redrawRouteLines() {
+  // First pass: clear all existing layers
   state.routes.forEach(r => {
     if (r.polyA) { map.removeLayer(r.polyA); r.polyA = null; }
-    // Remove all polyB segments (could be multiple)
+    if (r.polysA) { r.polysA.forEach(p => map.removeLayer(p)); }
+    r.polysA = [];
     if (r.polysB) { r.polysB.forEach(p => map.removeLayer(p)); }
     r.polysB = [];
+  });
 
-    const toLatLng = id => {
-      const s = state.stops.find(x => x.id === id);
-      return s ? [s.lat, s.lng] : null;
-    };
+  const toLatLng = id => {
+    const s = state.stops.find(x => x.id === id);
+    return s ? [s.lat, s.lng] : null;
+  };
 
+  // Build edge usage map: key = "lat1,lng1|lat2,lng2" (order-independent)
+  // value = array of { routeId, side } using that edge, in a stable order
+  const edgeUsage = new Map();
+
+  function edgeKey(p1, p2) {
+    const a = latLngKey(p1), b = latLngKey(p2);
+    return a < b ? `${a}|${b}` : `${b}|${a}`;
+  }
+
+  state.routes.forEach(r => {
+    const coordsA = r.sideA.map(toLatLng).filter(Boolean);
+    const coordsB = r.sideB.map(toLatLng).filter(Boolean);
+    [['A', coordsA], ['B', coordsB]].forEach(([side, coords]) => {
+      for (let i = 0; i < coords.length - 1; i++) {
+        const key = edgeKey(coords[i], coords[i+1]);
+        if (!edgeUsage.has(key)) edgeUsage.set(key, []);
+        const arr = edgeUsage.get(key);
+        // avoid double-counting if A and B of the SAME route share the
+        // exact same edge twice — still list separately so it gets offset
+        arr.push({ routeId: r.id, side, color: r.color });
+      }
+    });
+  });
+
+  state.routes.forEach(r => {
     const coordsA = r.sideA.map(toLatLng).filter(Boolean);
     const coordsB = r.sideB.map(toLatLng).filter(Boolean);
 
     if (coordsA.length > 1) {
-      r.polyA = L.polyline(coordsA, {
-        color: r.color, weight: 4, opacity: 0.85,
-        dashArray: r.type === 'limited' ? '8,6' : null,
-      }).addTo(map).bindTooltip(`${r.name} — Side A`, { sticky: true });
+      drawSideWithOffsets(r, coordsA, 'A', edgeUsage, edgeKey);
     }
-
-    // Side B: draw solid where it matches Side A, dashed where it diverges
     if (coordsB.length > 1) {
-      drawSideBWithBranching(r, coordsB, coordsA);
+      drawSideBWithBranching(r, coordsB, coordsA, edgeUsage, edgeKey);
     }
   });
 }
@@ -1074,10 +1167,110 @@ function latLngKey(coord) {
   return coord[0].toFixed(6) + ',' + coord[1].toFixed(6);
 }
 
-function drawSideBWithBranching(r, coordsB, coordsA) {
+// Compute a perpendicular pixel offset for an edge given how many routes
+// share it and this route's rank among them.
+function getEdgeOffset(p1, p2, routeId, side, edgeUsage, edgeKey) {
+  const key = edgeKey(p1, p2);
+  const sharers = edgeUsage.get(key) || [];
+  if (sharers.length <= 1) return [0, 0];
+
+  // Stable order: sort by routeId then side so all routes agree on ranks
+  const sorted = [...sharers].sort((a, b) =>
+    a.routeId !== b.routeId ? a.routeId - b.routeId : a.side.localeCompare(b.side)
+  );
+  // Find THIS entry's rank (handle duplicate routeId+side by using first match
+  // not yet consumed — simple approach: find index of first match)
+  let rank = sorted.findIndex(s => s.routeId === routeId && s.side === side);
+  if (rank === -1) rank = 0;
+
+  const n = sorted.length;
+  // Center the offsets around 0: ranks -((n-1)/2) .. +((n-1)/2)
+  const centeredRank = rank - (n - 1) / 2;
+
+  // Perpendicular direction in screen pixels
+  const pt1 = map.latLngToLayerPoint(p1);
+  const pt2 = map.latLngToLayerPoint(p2);
+  const dx = pt2.x - pt1.x, dy = pt2.y - pt1.y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  // Perpendicular unit vector
+  const px = -dy / len, py = dx / len;
+
+  const offsetPx = centeredRank * EDGE_OFFSET_PX;
+  return [px * offsetPx, py * offsetPx];
+}
+
+// Apply per-edge pixel offsets to a coordinate path, returning a new
+// lat/lng path where each point is nudged based on the offsets of its
+// adjacent edges (averaged at shared vertices for a smooth line).
+function applyEdgeOffsets(coords, routeId, side, edgeUsage, edgeKey) {
+  if (coords.length < 2) return coords;
+  const n = coords.length;
+  const pointOffsets = coords.map(() => [0, 0]);
+
+  for (let i = 0; i < n - 1; i++) {
+    const [ox, oy] = getEdgeOffset(coords[i], coords[i+1], routeId, side, edgeUsage, edgeKey);
+    // Accumulate offset onto both endpoints of this edge
+    pointOffsets[i][0]   += ox; pointOffsets[i][1]   += oy;
+    pointOffsets[i+1][0] += ox; pointOffsets[i+1][1] += oy;
+  }
+  // Average offsets at interior points (each touched by 2 edges)
+  for (let i = 1; i < n - 1; i++) {
+    pointOffsets[i][0] /= 2;
+    pointOffsets[i][1] /= 2;
+  }
+
+  return coords.map((c, i) => {
+    const pt = map.latLngToLayerPoint(c);
+    const shifted = L.point(pt.x + pointOffsets[i][0], pt.y + pointOffsets[i][1]);
+    const ll = map.layerPointToLatLng(shifted);
+    return [ll.lat, ll.lng];
+  });
+}
+
+// Build the stats tooltip HTML for a route (length in miles + bus count)
+function buildRouteStatsTooltip(r, coordsA, coordsB) {
+  const lenMeters = (coords) => {
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      total += map.distance(coords[i], coords[i+1]);
+    }
+    return total;
+  };
+  const milesA = lenMeters(coordsA) / 1609.344;
+  const milesB = lenMeters(coordsB) / 1609.344;
+  const totalMiles = milesA + milesB;
+
+  return `
+    <div style="font-size:11px;line-height:1.5;">
+      <div style="font-weight:800;color:${r.color};margin-bottom:2px;">${r.name}</div>
+      <div><strong>Type:</strong> ${r.type.toUpperCase()}</div>
+      <div><strong>Side A:</strong> ${milesA.toFixed(2)} mi</div>
+      <div><strong>Side B:</strong> ${milesB.toFixed(2)} mi</div>
+      <div><strong>Total:</strong> ${totalMiles.toFixed(2)} mi</div>
+      <div><strong>Buses:</strong> ${r.buses}</div>
+    </div>`;
+}
+
+function drawSideWithOffsets(r, coordsA, side, edgeUsage, edgeKey) {
+  const offsetCoords = applyEdgeOffsets(coordsA, r.id, side, edgeUsage, edgeKey);
+  // Need original (un-offset) coords to compute true stats
+  const coordsBForStats = r.sideB.map(id => {
+    const s = state.stops.find(x => x.id === id);
+    return s ? [s.lat, s.lng] : null;
+  }).filter(Boolean);
+
+  r.polyA = L.polyline(offsetCoords, {
+    color: r.color, weight: 4, opacity: 0.85,
+    dashArray: r.type === 'limited' ? '8,6' : null,
+  }).addTo(map).bindTooltip(() => buildRouteStatsTooltip(r, coordsA, coordsBForStats), { sticky: true });
+}
+
+function drawSideBWithBranching(r, coordsB, coordsA, edgeUsage, edgeKey) {
   const aSet = new Set(coordsA.map(latLngKey));
+  const offsetCoordsB = applyEdgeOffsets(coordsB, r.id, 'B', edgeUsage, edgeKey);
 
   // Walk coordsB, grouping consecutive points into "shared" vs "diverged" segments
+  // (use original coordsB for membership test, offsetCoordsB for drawing)
   let currentGroup = [];
   let currentShared = aSet.has(latLngKey(coordsB[0]));
 
@@ -1088,24 +1281,25 @@ function drawSideBWithBranching(r, coordsB, coordsA) {
       weight: isShared ? 4 : 3,
       opacity: isShared ? 0.6 : 0.85,
       dashArray: isShared ? null : '6,5',
-    }).addTo(map).bindTooltip(`${r.name} — Side B${isShared ? ' (shared)' : ' (branch)'}`, { sticky: true });
+    }).addTo(map).bindTooltip(() => buildRouteStatsTooltip(r, coordsA, coordsB), { sticky: true });
     r.polysB.push(poly);
   }
 
   for (let i = 0; i < coordsB.length; i++) {
     const pt = coordsB[i];
+    const offsetPt = offsetCoordsB[i];
     const shared = aSet.has(latLngKey(pt));
 
     if (shared !== currentShared) {
       // Flush previous group — carry over the boundary point to avoid gaps
       if (currentGroup.length > 0) {
-        currentGroup.push(pt); // add connecting point
+        currentGroup.push(offsetPt); // add connecting point
         flushGroup(currentShared);
       }
-      currentGroup = [pt];
+      currentGroup = [offsetPt];
       currentShared = shared;
     } else {
-      currentGroup.push(pt);
+      currentGroup.push(offsetPt);
     }
   }
   flushGroup(currentShared);
@@ -1161,6 +1355,39 @@ function getRouteBounds(id) {
 }
 
 // ════════════════════════════════════════════
+//  SMART BUS LABEL EXTRACTION
+//  Pulls a short "code" from a route name for the bus icon.
+//  e.g. "Bx40 Throggs Neck/RPT via 180 St" -> "Bx40"
+//       "Wyoming10934 to Alaska" -> "Wyoming10934"
+//       "Crosstown Express" -> "Crosstown" (no digits, fallback to first word/truncation)
+// ════════════════════════════════════════════
+function getBusLabel(name) {
+  if (!name) return '';
+  const trimmed = name.trim();
+
+  // Leading letters (optional) immediately followed by digits, e.g. "Bx40", "Wyoming10934", "10934"
+  const m = trimmed.match(/^([A-Za-z]*\d+)/);
+  if (m) {
+    let label = m[1];
+    if (label.length > 10) label = label.slice(0, 10);
+    return label;
+  }
+
+  // No leading number — find the first number group anywhere, with any
+  // immediately-preceding letters (no spaces) attached
+  const m2 = trimmed.match(/([A-Za-z]*)(\d+)/);
+  if (m2) {
+    let label = (m2[1] || '') + m2[2];
+    if (label.length > 10) label = label.slice(0, 10);
+    return label;
+  }
+
+  // No digits at all — fall back to the first word, truncated
+  const firstWord = trimmed.split(/\s+/)[0];
+  return firstWord.length > 10 ? firstWord.slice(0, 10) : firstWord;
+}
+
+// ════════════════════════════════════════════
 //  TABS
 // ════════════════════════════════════════════
 function switchTab(name) {
@@ -1208,22 +1435,31 @@ function startSim() {
       const icon = L.divIcon({
         className: '',
         html: `<div style="
-          width:18px;height:18px;border-radius:4px;
+          min-width:18px;height:18px;border-radius:4px;padding:0 3px;
           background:${r.color};border:2px solid #fff;
           display:flex;align-items:center;justify-content:center;
           font-size:9px;font-weight:900;color:${r.type==='sbs'?'#fff':'#000'};
-          box-shadow:0 2px 6px rgba(0,0,0,0.7);
-        ">${r.type==='sbs'?'S':r.type==='limited'?'L':'B'}</div>`,
+          box-shadow:0 2px 6px rgba(0,0,0,0.7);white-space:nowrap;
+        ">${getBusLabel(r.name)}</div>`,
         iconSize: [18,18], iconAnchor: [9,9],
       });
+
+      // Precompute segment distances (meters) for constant-speed travel
+      const segDistances = [];
+      for (let k = 0; k < fullLoop.length - 1; k++) {
+        const p1 = fullLoop[k], p2 = fullLoop[k+1];
+        segDistances.push(map.distance([p1.lat, p1.lng], [p2.lat, p2.lng]) || 1);
+      }
 
       const startPt = fullLoop[segIdx];
       const bus = {
         routeId: r.id,
         color: r.color,
         type: r.type,
+        name: r.name,
         loop: fullLoop,   // the full A+B merged sequence
         loopLen: fullLoop.length,
+        segDistances,
         segIdx,
         t,
         marker: L.marker([startPt.lat, startPt.lng], { icon, zIndexOffset: 500 })
@@ -1236,12 +1472,22 @@ function startSim() {
 
   const TICK = 50;
   state.simInterval = setInterval(() => {
-    const step = state.speedMult * 0.0004;
+    // Meters to travel this tick, scaled by speed slider
+    const metersPerTick = state.speedMult * 0.275;
     state.simBuses.forEach(bus => {
-      bus.t += step;
-      while (bus.t >= 1) {
-        bus.t -= 1;
-        bus.segIdx = (bus.segIdx + 1) % (bus.loopLen - 1);
+      let remaining = metersPerTick;
+      // Advance through segments until we've consumed the distance budget
+      while (remaining > 0) {
+        const segDist = bus.segDistances[bus.segIdx] || 1;
+        const remainingInSeg = (1 - bus.t) * segDist;
+        if (remaining < remainingInSeg) {
+          bus.t += remaining / segDist;
+          remaining = 0;
+        } else {
+          remaining -= remainingInSeg;
+          bus.segIdx = (bus.segIdx + 1) % (bus.loopLen - 1);
+          bus.t = 0;
+        }
       }
       const a = bus.loop[bus.segIdx];
       const b = bus.loop[bus.segIdx + 1];
@@ -1256,20 +1502,27 @@ function startSim() {
 }
 
 // Build a seamless A→B→A loop point sequence
-// Buses travel: A[0]→...→A[last], then B[0]→...→B[last], repeat
-// Waypoints at end of A and start of B provide smooth transitions
+// Buses travel: A[0]→...→A[last], then B[0]→...→B[last], then back to A[0]
+// The returned sequence includes a duplicate of the first point at the end
+// so the closing segment (last point -> first point) has a real distance
+// and the bus travels it smoothly instead of snapping.
 function buildLoopSequence(pointsA, pointsB) {
+  let seq;
   if (pointsA.length >= 2 && pointsB.length >= 2) {
-    // A forward, then B forward; the last point of A connects to first of B
-    // and last of B connects back to first of A — forming a closed loop
-    return [...pointsA, ...pointsB];
+    // A forward, then B forward; B's last point connects back to A's first
+    seq = [...pointsA, ...pointsB];
   } else if (pointsA.length >= 2) {
     // Only A defined — bounce A forward then backward
-    return [...pointsA, ...[...pointsA].reverse().slice(1)];
+    seq = [...pointsA, ...[...pointsA].reverse().slice(1)];
   } else if (pointsB.length >= 2) {
-    return [...pointsB, ...[...pointsB].reverse().slice(1)];
+    seq = [...pointsB, ...[...pointsB].reverse().slice(1)];
+  } else {
+    return [];
   }
-  return [];
+  // Close the loop: append the first point again so there's a real
+  // segment connecting the end of the sequence back to the start.
+  seq = [...seq, seq[0]];
+  return seq;
 }
 
 function stopSim() {
@@ -1288,8 +1541,110 @@ function updateSpeed(v) {
 }
 
 // ════════════════════════════════════════════
-//  UTIL
+//  SAVE / LOAD (JSON file)
 // ════════════════════════════════════════════
+function saveToFile() {
+  const data = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    stopIdCounter: state.stopIdCounter,
+    routeIdCounter: state.routeIdCounter,
+    stops: state.stops.map(s => ({
+      id: s.id, name: s.name, lat: s.lat, lng: s.lng,
+      types: s.types, isWaypoint: !!s.isWaypoint,
+    })),
+    routes: state.routes.map(r => ({
+      id: r.id, name: r.name, type: r.type, color: r.color, buses: r.buses,
+      sideA: r.sideA, sideB: r.sideB, activeSide: r.activeSide,
+    })),
+  };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  a.href = url;
+  a.download = `bus-routes-${ts}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  setStatus(`💾 Saved ${data.stops.length} stops/waypoints and ${data.routes.length} routes`);
+}
+
+function loadFromFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      applyLoadedData(data);
+    } catch (err) {
+      alert('Could not load file: ' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function applyLoadedData(data) {
+  if (!data || !Array.isArray(data.stops) || !Array.isArray(data.routes)) {
+    alert('That file doesn\'t look like a valid bus routes save.');
+    return;
+  }
+
+  // Stop simulation if running
+  if (state.simRunning) stopSim();
+
+  // Remove existing markers and route lines
+  state.stops.forEach(s => { if (s.marker) map.removeLayer(s.marker); });
+  state.routes.forEach(r => {
+    if (r.polyA) map.removeLayer(r.polyA);
+    if (r.polysA) r.polysA.forEach(p => map.removeLayer(p));
+    if (r.polyB) map.removeLayer(r.polyB);
+    if (r.polysB) r.polysB.forEach(p => map.removeLayer(p));
+  });
+
+  // Rebuild stops
+  state.stops = data.stops.map(s => {
+    const stop = {
+      id: s.id, name: s.name, lat: s.lat, lng: s.lng,
+      types: s.types || ['local'], marker: null, isWaypoint: !!s.isWaypoint,
+    };
+    createStopMarker(stop);
+    return stop;
+  });
+
+  // Rebuild routes
+  state.routes = data.routes.map(r => ({
+    id: r.id, name: r.name, type: r.type, color: r.color, buses: r.buses,
+    sideA: r.sideA || [], sideB: r.sideB || [],
+    polyA: null, polysA: [], polyB: null, polysB: [],
+    activeSide: r.activeSide || 'A',
+  }));
+
+  state.stopIdCounter = data.stopIdCounter || Math.max(0, ...state.stops.map(s => s.id), 0);
+  state.routeIdCounter = data.routeIdCounter || Math.max(0, ...state.routes.map(r => r.id), 0);
+
+  // Clear any in-progress UI selections
+  window._multiAddOrder = {};
+  editingSeqItem = null;
+
+  redrawRouteLines();
+  renderStopList();
+  renderRouteList();
+
+  // Fit map to loaded content
+  if (state.stops.length) {
+    const bounds = L.latLngBounds(state.stops.map(s => [s.lat, s.lng]));
+    map.fitBounds(bounds, { padding: [40, 40] });
+  }
+
+  setStatus(`📂 Loaded ${state.stops.length} stops/waypoints and ${state.routes.length} routes`);
+}
+
+
 function setStatus(msg) {
   document.getElementById('statusbar').textContent = msg;
 }
