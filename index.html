@@ -17,8 +17,8 @@
     --bg:       #0f1117;
     --surface:  #1a1d27;
     --border:   #2c2f3f;
-    --accent:   #f5a623;      /* MTA amber */
-    --accent2:  #3b82f6;      /* SBS blue  */
+    --accent:   #f5a623;
+    --accent2:  #3b82f6;
     --sbs:      #3b82f6;
     --limited:  #f59e0b;
     --local:    #22c55e;
@@ -82,6 +82,7 @@
   }
   .tool-btn:hover { border-color: var(--accent); color: var(--text); }
   .tool-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
+  .tool-btn.active-wp { background: #8b5cf6; color: #fff; border-color: #8b5cf6; }
 
   .sep { width: 1px; background: var(--border); height: 28px; margin: 0 4px; }
 
@@ -113,8 +114,8 @@
   /* ── Map ── */
   #map {
     flex: 1;
-    min-width: 0;     /* prevent flex overflow bleeding into panel */
-    height: 100%;     /* explicit height so Leaflet measures correctly */
+    min-width: 0;
+    height: 100%;
     z-index: 1;
     cursor: crosshair;
   }
@@ -129,7 +130,7 @@
     flex-direction: column;
     overflow: hidden;
     flex-shrink: 0;
-    position: relative; /* establish stacking context above map */
+    position: relative;
     z-index: 2;
   }
 
@@ -219,6 +220,7 @@
   .btn-accent  { background: var(--accent);  color: #000; }
   .btn-danger  { background: var(--danger);  color: #fff; }
   .btn-muted   { background: var(--border);  color: var(--text); }
+  .btn-purple  { background: #8b5cf6;        color: #fff; }
   .btn-full    { width: 100%; }
 
   /* ── Stop list items ── */
@@ -265,6 +267,7 @@
     padding: 8px 10px;
     background: var(--bg);
     cursor: pointer;
+    user-select: none;
   }
   .route-badge {
     font-size: 11px; font-weight: 800; padding: 2px 8px;
@@ -290,16 +293,44 @@
     padding: 4px 6px; border-radius: 5px;
     background: var(--bg); border: 1px solid var(--border);
     font-size: 11px;
+    cursor: pointer;
   }
+  .seq-item:hover { border-color: var(--accent); }
+  .seq-item.editing { border-color: var(--accent); background: #1a1d27; }
   .seq-num { color: var(--muted); font-size: 10px; width: 16px; text-align: right; }
   .seq-name { flex: 1; font-weight: 600; }
+  .seq-type-badge {
+    font-size: 9px; font-weight: 700; padding: 1px 4px;
+    border-radius: 3px; border: 1px solid #555; color: #aaa;
+  }
+  .seq-type-badge.waypoint { border-color: #8b5cf6; color: #8b5cf6; }
   .seq-remove {
     background: none; border: none; color: var(--danger);
     font-size: 13px; cursor: pointer; line-height: 1;
   }
 
+  /* ── Stop edit inline panel ── */
+  .seq-edit-row {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--surface); border: 1px solid var(--accent);
+    border-radius: 5px; padding: 6px 8px; margin-bottom: 4px;
+    font-size: 11px;
+  }
+  .seq-edit-row input[type=text] {
+    margin-bottom: 4px; font-size: 11px; padding: 3px 6px;
+  }
+  .seq-edit-btns { display: flex; gap: 4px; }
+  .seq-edit-btns button { font-size: 10px; padding: 3px 8px; }
+
   .add-stop-row { display: flex; gap: 6px; }
   .add-stop-row select { margin-bottom: 0; flex: 1; }
+
+  /* ── Waypoint toggle ── */
+  .wp-toggle-row {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--muted); margin-bottom: 6px;
+  }
+  .wp-toggle-row input[type=checkbox] { width: auto; margin: 0; accent-color: #8b5cf6; }
 
   .bus-config { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   .bus-config label { margin: 0; white-space: nowrap; }
@@ -343,9 +374,11 @@
   <div class="sep"></div>
 
   <div class="tool-group">
-    <button class="tool-btn" id="btn-pan"   onclick="setTool('pan')">✋ Pan</button>
-    <button class="tool-btn" id="btn-stop"  onclick="setTool('stop')">🔵 Add Stop</button>
-    <button class="tool-btn" id="btn-route" onclick="setTool('route')">➕ New Route</button>
+    <button class="tool-btn" id="btn-pan"       onclick="setTool('pan')">✋ Pan</button>
+    <button class="tool-btn" id="btn-stop"       onclick="setTool('stop')">🔵 Add Stop</button>
+    <button class="tool-btn" id="btn-waypoint"   onclick="setTool('waypoint')">◆ Add Waypoint</button>
+    <button class="tool-btn" id="btn-route"      onclick="setTool('route')">➕ New Route</button>
+    <button class="tool-btn" id="btn-toggle-wp"  onclick="toggleWaypointVisibility()">👁 Waypoints</button>
   </div>
 
   <div class="sep"></div>
@@ -371,7 +404,7 @@
     <!-- STOPS TAB -->
     <div class="tab-content active" id="tab-stops">
       <div style="font-size:11px;color:var(--muted);">
-        Select <strong style="color:var(--text)">Add Stop</strong> then click the map to place stops.
+        Select <strong style="color:var(--text)">Add Stop</strong> or <strong style="color:#c4b5fd">Add Waypoint</strong> then click the map.
       </div>
       <div id="stop-list"></div>
     </div>
@@ -407,7 +440,7 @@
 </div>
 
 <!-- STATUS BAR -->
-<div id="statusbar" id="status">Click the map to place stops • Select a tool above</div>
+<div id="statusbar">Click the map to place stops • Select a tool above</div>
 
 <script>
 // ════════════════════════════════════════════
@@ -415,23 +448,28 @@
 // ════════════════════════════════════════════
 const state = {
   tool: 'pan',
-  stops: [],       // { id, name, lat, lng, types:[], marker }
-  routes: [],      // { id, name, type, color, buses:n, sideA:[], sideB:[], polyA, polyB, activeSide:'A' }
+  stops: [],
+  // stops: { id, name, lat, lng, types:[], marker, isWaypoint:bool }
+  routes: [],
+  // routes: { id, name, type, color, buses:n, sideA:[], sideB:[], polyA, polyB, activeSide:'A' }
   simRunning: false,
-  simBuses: [],    // { routeId, side, idx, t, marker, speed }
+  simBuses: [],
   simInterval: null,
   speedMult: 5,
   stopIdCounter: 0,
   routeIdCounter: 0,
+  waypointsVisible: true,
 };
 
 let selectedRouteType = 'local';
+// Track which seq-item is currently being edited: { routeId, side, stopId }
+let editingSeqItem = null;
 
 // ════════════════════════════════════════════
 //  MAP INIT
 // ════════════════════════════════════════════
-const map = L.map('map', { zoomControl: true }).setView([40.8448, -73.8648], 13); // Bronx
-setTimeout(() => map.invalidateSize(), 0); // re-measure after flex layout settles
+const map = L.map('map', { zoomControl: true }).setView([40.8448, -73.8648], 13);
+setTimeout(() => map.invalidateSize(), 0);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors',
@@ -445,36 +483,85 @@ map.on('click', onMapClick);
 // ════════════════════════════════════════════
 function setTool(t) {
   state.tool = t;
-  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('btn-' + t)?.classList.add('active');
+  document.querySelectorAll('.tool-btn').forEach(b => {
+    b.classList.remove('active');
+    b.classList.remove('active-wp');
+  });
+  if (t === 'waypoint') {
+    document.getElementById('btn-waypoint').classList.add('active-wp');
+  } else {
+    document.getElementById('btn-' + t)?.classList.add('active');
+  }
   const mapEl = document.getElementById('map');
   mapEl.className = t === 'pan' ? 'pan-mode' : '';
-  setStatus(t === 'stop'  ? '🔵 Click the map to place a stop' :
-            t === 'route' ? '➕ Open Routes tab and create a route' :
-            '✋ Pan mode – drag to move map');
+  setStatus(
+    t === 'stop'     ? '🔵 Click the map to place a stop' :
+    t === 'waypoint' ? '◆ Click the map to place a waypoint (guides the path, no passenger boarding)' :
+    t === 'route'    ? '➕ Open Routes tab and create a route' :
+    '✋ Pan mode – drag to move map'
+  );
 }
 setTool('pan');
+
+// ════════════════════════════════════════════
+//  WAYPOINT VISIBILITY TOGGLE
+// ════════════════════════════════════════════
+function toggleWaypointVisibility() {
+  state.waypointsVisible = !state.waypointsVisible;
+  const btn = document.getElementById('btn-toggle-wp');
+  btn.textContent = state.waypointsVisible ? '👁 Waypoints' : '👁‍🗨 Waypoints';
+  btn.style.opacity = state.waypointsVisible ? '1' : '0.5';
+
+  state.stops.forEach(s => {
+    if (s.isWaypoint && s.marker) {
+      if (state.waypointsVisible) {
+        s.marker.addTo(map);
+      } else {
+        map.removeLayer(s.marker);
+      }
+    }
+  });
+  setStatus(state.waypointsVisible ? '◆ Waypoints visible' : '◆ Waypoints hidden');
+}
 
 // ════════════════════════════════════════════
 //  MAP CLICK
 // ════════════════════════════════════════════
 function onMapClick(e) {
-  if (state.tool !== 'stop') return;
-  openStopPopup(e.latlng);
+  if (state.tool === 'stop') {
+    openStopPopup(e.latlng, false);
+  } else if (state.tool === 'waypoint') {
+    openStopPopup(e.latlng, true);
+  }
 }
 
-function openStopPopup(latlng) {
+function openStopPopup(latlng, isWaypoint) {
   const id = ++state.stopIdCounter;
   const popup = L.popup({ closeOnClick: false, autoClose: false })
     .setLatLng(latlng)
-    .setContent(buildStopPopupHTML(id))
+    .setContent(buildStopPopupHTML(id, isWaypoint))
     .openOn(map);
 
-  // Store temp data
-  window._pendingStop = { id, latlng, popup };
+  window._pendingStop = { id, latlng, popup, isWaypoint };
 }
 
-function buildStopPopupHTML(id) {
+function buildStopPopupHTML(id, isWaypoint) {
+  if (isWaypoint) {
+    return `
+      <div style="min-width:180px;">
+        <div style="font-weight:700;font-size:13px;margin-bottom:8px;color:#c4b5fd;">◆ Configure Waypoint</div>
+        <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">Label (optional)</div>
+        <input id="ps-name-${id}" type="text" placeholder="e.g. Turn at 3rd Ave"
+          style="width:100%;background:#0f1117;border:1px solid #2c2f3f;border-radius:5px;
+                 color:#e8eaf0;font-size:12px;padding:5px 8px;margin-bottom:8px;outline:none;" />
+        <div style="font-size:10px;color:#6b7280;margin-bottom:8px;">Waypoints guide the bus path but are not passenger stops.</div>
+        <button onclick="confirmStop(${id})"
+          style="width:100%;background:#8b5cf6;color:#fff;border:none;border-radius:6px;
+                 padding:6px;font-size:12px;font-weight:700;cursor:pointer;">
+          Place Waypoint
+        </button>
+      </div>`;
+  }
   return `
     <div style="min-width:180px;">
       <div style="font-weight:700;font-size:13px;margin-bottom:8px;">Configure Stop</div>
@@ -515,8 +602,47 @@ function confirmStop(id) {
 
   const nameEl = document.getElementById(`ps-name-${id}`);
   const name = nameEl ? nameEl.value.trim() : '';
-  if (!name) { alert('Please enter a stop name.'); return; }
 
+  if (p.isWaypoint) {
+    const label = name || `WP${id}`;
+    const stop = {
+      id,
+      name: label,
+      lat: p.latlng.lat,
+      lng: p.latlng.lng,
+      types: ['local', 'limited', 'sbs'], // waypoints are eligible for all route types
+      marker: null,
+      isWaypoint: true,
+    };
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:10px;height:10px;
+        background:#8b5cf6;
+        transform:rotate(45deg);
+        border:1.5px solid #fff;
+        box-shadow:0 0 4px rgba(139,92,246,0.7);
+      "></div>`,
+      iconSize: [10,10],
+      iconAnchor: [5,5],
+    });
+    stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
+      .addTo(map)
+      .bindTooltip(`◆ ${label}`, { permanent: false, direction: 'top', offset: [0,-8] });
+    stop.marker.on('dragend', () => {
+      const ll = stop.marker.getLatLng();
+      stop.lat = ll.lat; stop.lng = ll.lng;
+      redrawRouteLines();
+    });
+    stop.marker.on('contextmenu', () => deleteStop(stop.id));
+    state.stops.push(stop);
+    map.closePopup();
+    renderStopList();
+    setStatus(`◆ Waypoint "${label}" placed`);
+    return;
+  }
+
+  if (!name) { alert('Please enter a stop name.'); return; }
   const types = ['local','limited','sbs'].filter(t => window._popupChips[`${id}-${t}`]);
   if (!types.length) { alert('Select at least one service type.'); return; }
 
@@ -527,9 +653,9 @@ function confirmStop(id) {
     lng: p.latlng.lng,
     types,
     marker: null,
+    isWaypoint: false,
   };
 
-  // Build marker with stacked color
   const color = typeColor(types[0]);
   const icon = L.divIcon({
     className: '',
@@ -552,13 +678,112 @@ function confirmStop(id) {
     redrawRouteLines();
   });
 
-  stop.marker.on('contextmenu', () => deleteStop(stop.id));
+  // Right-click to open edit popup
+  stop.marker.on('contextmenu', (e) => {
+    L.DomEvent.stopPropagation(e);
+    openEditStopPopup(stop);
+  });
 
   state.stops.push(stop);
   map.closePopup();
   renderStopList();
   renderRouteList();
   setStatus(`✅ Stop "${name}" added (${types.join(', ')})`);
+}
+
+// ════════════════════════════════════════════
+//  STOP EDITING (right-click on marker)
+// ════════════════════════════════════════════
+function openEditStopPopup(stop) {
+  const typesChecked = (t) => stop.types.includes(t)
+    ? `style="opacity:1;background:${t==='sbs'?'#3b82f6':t==='limited'?'#f59e0b':'#22c55e'};color:${t==='sbs'?'#fff':'#000'};"`
+    : `style="opacity:0.45;"`;
+
+  const html = `
+    <div style="min-width:190px;">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;">✏️ Edit Stop</div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">Name</div>
+      <input id="es-name-${stop.id}" type="text" value="${stop.name}"
+        style="width:100%;background:#0f1117;border:1px solid #2c2f3f;border-radius:5px;
+               color:#e8eaf0;font-size:12px;padding:5px 8px;margin-bottom:8px;outline:none;" />
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:5px;">Service types</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <div id="es-local-${stop.id}" onclick="toggleEditChip(${stop.id},'local')"
+          class="chip local" ${typesChecked('local')}
+          style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #22c55e;cursor:pointer;">Local</div>
+        <div id="es-limited-${stop.id}" onclick="toggleEditChip(${stop.id},'limited')"
+          class="chip limited" ${typesChecked('limited')}
+          style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #f59e0b;cursor:pointer;">Limited</div>
+        <div id="es-sbs-${stop.id}" onclick="toggleEditChip(${stop.id},'sbs')"
+          class="chip sbs" ${typesChecked('sbs')}
+          style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #3b82f6;cursor:pointer;">SBS</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="saveStopEdit(${stop.id})"
+          style="flex:1;background:#f5a623;color:#000;border:none;border-radius:6px;
+                 padding:6px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
+        <button onclick="deleteStop(${stop.id});map.closePopup();"
+          style="flex:1;background:#ef4444;color:#fff;border:none;border-radius:6px;
+                 padding:6px;font-size:12px;font-weight:700;cursor:pointer;">Delete</button>
+      </div>
+    </div>`;
+
+  // Pre-populate edit chips state
+  window._editChips = window._editChips || {};
+  ['local','limited','sbs'].forEach(t => {
+    window._editChips[`${stop.id}-${t}`] = stop.types.includes(t);
+  });
+
+  L.popup({ closeOnClick: false, autoClose: false })
+    .setLatLng([stop.lat, stop.lng])
+    .setContent(html)
+    .openOn(map);
+}
+
+window._editChips = {};
+function toggleEditChip(stopId, type) {
+  const key = `${stopId}-${type}`;
+  const el = document.getElementById(`es-${type}-${stopId}`);
+  if (!el) return;
+  const on = !window._editChips[key];
+  window._editChips[key] = on;
+  el.style.opacity = on ? '1' : '0.45';
+  const bg = type === 'local' ? '#22c55e' : type === 'limited' ? '#f59e0b' : '#3b82f6';
+  el.style.background = on ? bg : 'transparent';
+  el.style.color = on ? (type === 'sbs' ? '#fff' : '#000') : bg;
+}
+
+function saveStopEdit(stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  if (!stop) return;
+  const nameEl = document.getElementById(`es-name-${stopId}`);
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { alert('Please enter a stop name.'); return; }
+  const types = ['local','limited','sbs'].filter(t => window._editChips[`${stopId}-${t}`]);
+  if (!types.length) { alert('Select at least one service type.'); return; }
+
+  stop.name = name;
+  stop.types = types;
+
+  // Update marker tooltip
+  if (stop.marker) {
+    stop.marker.unbindTooltip();
+    stop.marker.bindTooltip(name, { permanent: false, direction: 'top', offset: [0,-8] });
+    // Update marker color
+    const color = typeColor(types[0]);
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.6);"></div>`,
+      iconSize: [14,14], iconAnchor: [7,7],
+    });
+    stop.marker.setIcon(icon);
+  }
+
+  map.closePopup();
+  renderStopList();
+  renderRouteList();
+  redrawRouteLines();
+  setStatus(`✏️ Stop "${name}" updated`);
 }
 
 function typeColor(t) {
@@ -571,7 +796,6 @@ function deleteStop(id) {
   const stop = state.stops[idx];
   if (stop.marker) map.removeLayer(stop.marker);
   state.stops.splice(idx, 1);
-  // Remove from routes
   state.routes.forEach(r => {
     r.sideA = r.sideA.filter(sid => sid !== id);
     r.sideB = r.sideB.filter(sid => sid !== id);
@@ -586,18 +810,29 @@ function deleteStop(id) {
 // ════════════════════════════════════════════
 function renderStopList() {
   const el = document.getElementById('stop-list');
-  if (!state.stops.length) {
+  const allStops = state.stops;
+  if (!allStops.length) {
     el.innerHTML = '<div class="empty">No stops placed yet.<br/>Select "Add Stop" and click the map.</div>';
     return;
   }
-  el.innerHTML = state.stops.map(s => `
-    <div class="stop-item" onclick="focusStop(${s.id})">
-      <div class="stop-dot" style="background:${typeColor(s.types[0])};"></div>
-      <span class="stop-name">${s.name}</span>
-      <span class="stop-tags">${s.types.map(t => `<span class="tag ${t}">${t.toUpperCase()}</span>`).join('')}</span>
-      <button class="del-btn" onclick="event.stopPropagation();deleteStop(${s.id})">✕</button>
-    </div>
-  `).join('');
+  el.innerHTML = allStops.map(s => {
+    if (s.isWaypoint) {
+      return `
+        <div class="stop-item" onclick="focusStop(${s.id})" style="border-color:#4c1d95;">
+          <div class="stop-dot" style="background:#8b5cf6;border-radius:2px;transform:rotate(45deg);"></div>
+          <span class="stop-name" style="color:#c4b5fd;">◆ ${s.name}</span>
+          <span style="font-size:9px;color:#8b5cf6;font-weight:700;">WP</span>
+          <button class="del-btn" onclick="event.stopPropagation();deleteStop(${s.id})">✕</button>
+        </div>`;
+    }
+    return `
+      <div class="stop-item" onclick="focusStop(${s.id})">
+        <div class="stop-dot" style="background:${typeColor(s.types[0])};"></div>
+        <span class="stop-name">${s.name}</span>
+        <span class="stop-tags">${s.types.map(t => `<span class="tag ${t}">${t.toUpperCase()}</span>`).join('')}</span>
+        <button class="del-btn" onclick="event.stopPropagation();deleteStop(${s.id})">✕</button>
+      </div>`;
+  }).join('');
 }
 
 function focusStop(id) {
@@ -634,7 +869,7 @@ function createRoute() {
     type: selectedRouteType,
     color,
     buses,
-    sideA: [],
+    sideA: [],   // array of stopIds (stops + waypoints)
     sideB: [],
     polyA: null,
     polyB: null,
@@ -658,14 +893,16 @@ function deleteRoute(id) {
 }
 
 function addStopToSide(routeId, side, stopId) {
+  stopId = parseInt(stopId);
+  if (!stopId) return;
   const r = state.routes.find(x => x.id === routeId);
-  const sid = parseInt(stopId);
-  if (!r || !sid) return;
+  if (!r) return;
   const arr = side === 'A' ? r.sideA : r.sideB;
-  if (!arr.includes(sid)) {
-    arr.push(sid);
+  if (!arr.includes(stopId)) {
+    arr.push(stopId);
     redrawRouteLines();
-    renderRouteList();
+    // Re-render only the specific route body without closing it
+    rerenderRouteBody(routeId);
   }
 }
 
@@ -674,21 +911,141 @@ function removeStopFromSide(routeId, side, stopId) {
   if (!r) return;
   const arr = side === 'A' ? r.sideA : r.sideB;
   const idx = arr.indexOf(stopId);
-  if (idx !== -1) { arr.splice(idx, 1); redrawRouteLines(); renderRouteList(); }
+  if (idx !== -1) {
+    arr.splice(idx, 1);
+    redrawRouteLines();
+    rerenderRouteBody(routeId);
+  }
 }
 
 function setActiveSide(routeId, side) {
   const r = state.routes.find(x => x.id === routeId);
-  if (r) { r.activeSide = side; renderRouteList(); }
+  if (r) {
+    r.activeSide = side;
+    rerenderRouteBody(routeId);
+  }
+}
+
+// Inline edit for seq items (rename stop within route context)
+function openSeqEdit(routeId, side, stopId) {
+  editingSeqItem = { routeId, side, stopId };
+  rerenderRouteBody(routeId);
+}
+function closeSeqEdit(routeId) {
+  editingSeqItem = null;
+  rerenderRouteBody(routeId);
+}
+function saveSeqEdit(routeId, stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  if (!stop) return;
+  const nameEl = document.getElementById(`seq-edit-name-${stopId}`);
+  if (nameEl && nameEl.value.trim()) {
+    stop.name = nameEl.value.trim();
+    if (stop.marker) {
+      stop.marker.unbindTooltip();
+      stop.marker.bindTooltip(stop.name, { permanent: false, direction: 'top', offset: [0,-8] });
+    }
+  }
+  renderStopList();
+  editingSeqItem = null;
+  rerenderRouteBody(routeId);
+}
+
+// ════════════════════════════════════════════
+//  SELECTIVE RE-RENDER (keeps panel open!)
+// ════════════════════════════════════════════
+function rerenderRouteBody(routeId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  const bodyEl = document.getElementById(`rb-${r.id}`);
+  if (!bodyEl) { renderRouteList(); return; }
+  // Rebuild just this route's body content
+  bodyEl.innerHTML = buildRouteBody(r);
+}
+
+function buildRouteBody(r) {
+  const side = r.activeSide;
+  const arr  = side === 'A' ? r.sideA : r.sideB;
+
+  // Eligible: stops matching route type OR waypoints (always eligible)
+  const eligible = state.stops.filter(s => s.isWaypoint || s.types.includes(r.type));
+
+  const seqHTML = arr.length
+    ? arr.map((sid, i) => {
+        const s = state.stops.find(x => x.id === sid);
+        if (!s) return '';
+        // If this item is being edited
+        if (editingSeqItem &&
+            editingSeqItem.routeId === r.id &&
+            editingSeqItem.side === side &&
+            editingSeqItem.stopId === sid) {
+          return `
+            <div class="seq-edit-row">
+              <div style="font-size:10px;color:var(--muted);margin-bottom:2px;">Editing: ${s.name}</div>
+              <input type="text" id="seq-edit-name-${sid}" value="${s.name}" placeholder="Stop name" />
+              <div class="seq-edit-btns">
+                <button class="btn btn-accent" onclick="saveSeqEdit(${r.id},${sid})">Save</button>
+                <button class="btn btn-muted" onclick="closeSeqEdit(${r.id})">Cancel</button>
+              </div>
+            </div>`;
+        }
+        const wpBadge = s.isWaypoint
+          ? `<span class="seq-type-badge waypoint">WP</span>`
+          : `<span class="seq-type-badge">${s.types[0].toUpperCase()}</span>`;
+        return `<div class="seq-item" onclick="openSeqEdit(${r.id},'${side}',${sid})">
+          <span class="seq-num">${i+1}</span>
+          <span class="seq-name" style="${s.isWaypoint?'color:#c4b5fd;':''}">${s.isWaypoint?'◆ ':''}${s.name}</span>
+          ${wpBadge}
+          <button class="seq-remove" onclick="event.stopPropagation();removeStopFromSide(${r.id},'${side}',${sid})">✕</button>
+        </div>`;
+      }).join('')
+    : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No stops added yet.</div>';
+
+  const optHTML = eligible.length
+    ? eligible.filter(s => !arr.includes(s.id)).map(s =>
+        `<option value="${s.id}">${s.isWaypoint?'◆ ':''}${s.name}${s.isWaypoint?'':' ('+s.types.join('/')+')'}</option>`
+      ).join('')
+    : '<option disabled>No eligible stops</option>';
+
+  return `
+    <div class="side-tabs">
+      <div class="side-tab ${side==='A'?'active':''}" onclick="setActiveSide(${r.id},'A')">Side A</div>
+      <div class="side-tab ${side==='B'?'active':''}" onclick="setActiveSide(${r.id},'B')">Side B</div>
+    </div>
+
+    <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">Click a stop in the list to rename it. Right-click map markers to edit.</div>
+
+    <div class="stop-sequence">${seqHTML}</div>
+
+    <div class="add-stop-row">
+      <select id="add-sel-${r.id}">
+        <option value="">— add stop/waypoint —</option>
+        ${optHTML}
+      </select>
+      <button class="btn btn-accent" style="padding:4px 10px;"
+        onclick="addStopToSide(${r.id},'${r.activeSide}',document.getElementById('add-sel-${r.id}').value)">
+        +
+      </button>
+    </div>
+
+    <div style="margin-top:10px;display:flex;gap:6px;">
+      <button class="btn btn-muted" style="flex:1;font-size:11px;"
+        onclick="map.fitBounds(getRouteBounds(${r.id}))">🗺 Focus</button>
+      <button class="btn btn-danger" style="flex:1;font-size:11px;"
+        onclick="deleteRoute(${r.id})">🗑 Delete</button>
+    </div>`;
 }
 
 // ════════════════════════════════════════════
 //  ROUTE LINES ON MAP
+//  Side B: dashed ONLY where it diverges from Side A
 // ════════════════════════════════════════════
 function redrawRouteLines() {
   state.routes.forEach(r => {
     if (r.polyA) { map.removeLayer(r.polyA); r.polyA = null; }
-    if (r.polyB) { map.removeLayer(r.polyB); r.polyB = null; }
+    // Remove all polyB segments (could be multiple)
+    if (r.polysB) { r.polysB.forEach(p => map.removeLayer(p)); }
+    r.polysB = [];
 
     const toLatLng = id => {
       const s = state.stops.find(x => x.id === id);
@@ -701,20 +1058,61 @@ function redrawRouteLines() {
     if (coordsA.length > 1) {
       r.polyA = L.polyline(coordsA, {
         color: r.color, weight: 4, opacity: 0.85,
-        dashArray: r.type === 'limited' ? '8,6' : r.type === 'sbs' ? null : null,
+        dashArray: r.type === 'limited' ? '8,6' : null,
       }).addTo(map).bindTooltip(`${r.name} — Side A`, { sticky: true });
     }
+
+    // Side B: draw solid where it matches Side A, dashed where it diverges
     if (coordsB.length > 1) {
-      r.polyB = L.polyline(coordsB, {
-        color: r.color, weight: 4, opacity: 0.6,
-        dashArray: '4,4',
-      }).addTo(map).bindTooltip(`${r.name} — Side B`, { sticky: true });
+      drawSideBWithBranching(r, coordsB, coordsA);
     }
   });
 }
 
+// Build a Set of "lat,lng" strings from Side A for quick lookup
+function latLngKey(coord) {
+  return coord[0].toFixed(6) + ',' + coord[1].toFixed(6);
+}
+
+function drawSideBWithBranching(r, coordsB, coordsA) {
+  const aSet = new Set(coordsA.map(latLngKey));
+
+  // Walk coordsB, grouping consecutive points into "shared" vs "diverged" segments
+  let currentGroup = [];
+  let currentShared = aSet.has(latLngKey(coordsB[0]));
+
+  function flushGroup(isShared) {
+    if (currentGroup.length < 2) return;
+    const poly = L.polyline(currentGroup, {
+      color: r.color,
+      weight: isShared ? 4 : 3,
+      opacity: isShared ? 0.6 : 0.85,
+      dashArray: isShared ? null : '6,5',
+    }).addTo(map).bindTooltip(`${r.name} — Side B${isShared ? ' (shared)' : ' (branch)'}`, { sticky: true });
+    r.polysB.push(poly);
+  }
+
+  for (let i = 0; i < coordsB.length; i++) {
+    const pt = coordsB[i];
+    const shared = aSet.has(latLngKey(pt));
+
+    if (shared !== currentShared) {
+      // Flush previous group — carry over the boundary point to avoid gaps
+      if (currentGroup.length > 0) {
+        currentGroup.push(pt); // add connecting point
+        flushGroup(currentShared);
+      }
+      currentGroup = [pt];
+      currentShared = shared;
+    } else {
+      currentGroup.push(pt);
+    }
+  }
+  flushGroup(currentShared);
+}
+
 // ════════════════════════════════════════════
-//  ROUTE LIST RENDER
+//  ROUTE LIST RENDER (full rebuild)
 // ════════════════════════════════════════════
 function renderRouteList() {
   const el = document.getElementById('route-list');
@@ -723,69 +1121,27 @@ function renderRouteList() {
     return;
   }
 
-  el.innerHTML = state.routes.map(r => {
-    const side = r.activeSide;
-    const arr  = side === 'A' ? r.sideA : r.sideB;
+  // Remember which bodies were open
+  const openIds = new Set(
+    state.routes.filter(r => {
+      const el = document.getElementById(`rb-${r.id}`);
+      return el && el.classList.contains('open');
+    }).map(r => r.id)
+  );
 
-    // Eligible stops for this route type
-    const eligible = state.stops.filter(s => s.types.includes(r.type));
-
-    const seqHTML = arr.length
-      ? arr.map((sid, i) => {
-          const s = state.stops.find(x => x.id === sid);
-          if (!s) return '';
-          return `<div class="seq-item">
-            <span class="seq-num">${i+1}</span>
-            <span class="seq-name">${s.name}</span>
-            <span class="stop-tags">${s.types.map(t=>`<span class="tag ${t}">${t.toUpperCase()}</span>`).join('')}</span>
-            <button class="seq-remove" onclick="removeStopFromSide(${r.id},'${side}',${sid})">✕</button>
-          </div>`;
-        }).join('')
-      : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No stops added yet.</div>';
-
-    const optHTML = eligible.length
-      ? eligible.filter(s => !arr.includes(s.id)).map(s =>
-          `<option value="${s.id}">${s.name} (${s.types.join('/')})</option>`
-        ).join('')
-      : '<option disabled>No eligible stops</option>';
-
-    return `
-      <div class="route-item" id="ri-${r.id}">
-        <div class="route-header" onclick="toggleRouteBody(${r.id})">
-          <div class="route-badge" style="background:${r.color};">${r.name}</div>
-          <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
-          <span class="route-name"></span>
-          <span style="font-size:10px;color:var(--muted);">${r.buses} bus${r.buses>1?'es':''}</span>
-          <span class="route-expand">▾</span>
-        </div>
-        <div class="route-body" id="rb-${r.id}">
-          <div class="side-tabs">
-            <div class="side-tab ${side==='A'?'active':''}" onclick="setActiveSide(${r.id},'A')">Side A</div>
-            <div class="side-tab ${side==='B'?'active':''}" onclick="setActiveSide(${r.id},'B')">Side B</div>
-          </div>
-
-          <div class="stop-sequence">${seqHTML}</div>
-
-          <div class="add-stop-row">
-            <select id="add-sel-${r.id}-${side}">
-              <option value="">— add stop —</option>
-              ${optHTML}
-            </select>
-            <button class="btn btn-accent" style="padding:4px 10px;"
-              onclick="addStopToSide(${r.id},'${side}',document.getElementById('add-sel-${r.id}-${side}').value)">
-              +
-            </button>
-          </div>
-
-          <div style="margin-top:10px;display:flex;gap:6px;">
-            <button class="btn btn-muted" style="flex:1;font-size:11px;"
-              onclick="map.fitBounds(getRouteBounds(${r.id}))">🗺 Focus</button>
-            <button class="btn btn-danger" style="flex:1;font-size:11px;"
-              onclick="deleteRoute(${r.id})">🗑 Delete</button>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
+  el.innerHTML = state.routes.map(r => `
+    <div class="route-item" id="ri-${r.id}">
+      <div class="route-header" onclick="toggleRouteBody(${r.id})">
+        <div class="route-badge" style="background:${r.color};">${r.name}</div>
+        <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
+        <span class="route-name"></span>
+        <span style="font-size:10px;color:var(--muted);">${r.buses} bus${r.buses>1?'es':''}</span>
+        <span class="route-expand">▾</span>
+      </div>
+      <div class="route-body${openIds.has(r.id)?' open':''}" id="rb-${r.id}">
+        ${buildRouteBody(r)}
+      </div>
+    </div>`).join('');
 }
 
 function toggleRouteBody(id) {
@@ -816,7 +1172,7 @@ function switchTab(name) {
 }
 
 // ════════════════════════════════════════════
-//  SIMULATION
+//  SIMULATION  (A→B→A looping with waypoints)
 // ════════════════════════════════════════════
 function toggleSim() {
   state.simRunning ? stopSim() : startSim();
@@ -828,36 +1184,26 @@ function startSim() {
   document.getElementById('sim-btn').textContent = '■ Stop Sim';
   document.getElementById('sim-btn').classList.add('running');
 
-  // Spawn buses
   state.simBuses = [];
   state.routes.forEach(r => {
-    const stopsA = r.sideA.map(id => state.stops.find(s=>s.id===id)).filter(Boolean);
-    const stopsB = r.sideB.map(id => state.stops.find(s=>s.id===id)).filter(Boolean);
+    // Full ordered point arrays (stops + waypoints) for each side
+    const pointsA = r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean);
+    const pointsB = r.sideB.map(id => state.stops.find(s => s.id === id)).filter(Boolean);
+
+    if (pointsA.length < 2 && pointsB.length < 2) return;
 
     for (let i = 0; i < r.buses; i++) {
-      // Alternate buses between sides
-      const side  = i % 2 === 0 ? 'A' : 'B';
-      const stops = side === 'A' ? stopsA : stopsB;
-      if (stops.length < 2) continue;
+      // Build the full A→B→A loop sequence:
+      // A (forward) → B (forward) → repeat
+      // The transition from end-of-A to start-of-B is handled by waypoints at tail of A / head of B
+      const fullLoop = buildLoopSequence(pointsA, pointsB);
+      if (fullLoop.length < 2) continue;
 
-      const offset = i / r.buses; // stagger start
-      const bus = {
-        routeId: r.id,
-        color:   r.color,
-        type:    r.type,
-        side,
-        stops,
-        segIdx:  0,
-        t:       offset % 1,
-        marker:  null,
-        forward: true,
-      };
-
-      // Advance to correct segment from offset
-      const totalSegs = stops.length - 1;
+      const offset = i / r.buses;
+      const totalSegs = fullLoop.length - 1;
       const absT = offset * totalSegs;
-      bus.segIdx = Math.floor(absT) % totalSegs;
-      bus.t      = absT - Math.floor(absT);
+      const segIdx = Math.floor(absT) % totalSegs;
+      const t = absT - Math.floor(absT);
 
       const icon = L.divIcon({
         className: '',
@@ -871,38 +1217,59 @@ function startSim() {
         iconSize: [18,18], iconAnchor: [9,9],
       });
 
-      const startStop = stops[bus.segIdx];
-      bus.marker = L.marker([startStop.lat, startStop.lng], { icon, zIndexOffset: 500 })
-        .addTo(map)
-        .bindTooltip(`${r.name} (${side})`, { permanent: false, direction: 'top' });
-
+      const startPt = fullLoop[segIdx];
+      const bus = {
+        routeId: r.id,
+        color: r.color,
+        type: r.type,
+        loop: fullLoop,   // the full A+B merged sequence
+        loopLen: fullLoop.length,
+        segIdx,
+        t,
+        marker: L.marker([startPt.lat, startPt.lng], { icon, zIndexOffset: 500 })
+          .addTo(map)
+          .bindTooltip(`${r.name}`, { permanent: false, direction: 'top' }),
+      };
       state.simBuses.push(bus);
     }
   });
 
-  // Animation loop
-  const TICK = 50; // ms
+  const TICK = 50;
   state.simInterval = setInterval(() => {
-    const step = (state.speedMult * 0.0004);
+    const step = state.speedMult * 0.0004;
     state.simBuses.forEach(bus => {
-      if (bus.stops.length < 2) return;
       bus.t += step;
-      if (bus.t >= 1) {
-        bus.t = 0;
-        bus.segIdx++;
-        if (bus.segIdx >= bus.stops.length - 1) {
-          bus.segIdx = 0; // loop
-        }
+      while (bus.t >= 1) {
+        bus.t -= 1;
+        bus.segIdx = (bus.segIdx + 1) % (bus.loopLen - 1);
       }
-      const a = bus.stops[bus.segIdx];
-      const b = bus.stops[Math.min(bus.segIdx + 1, bus.stops.length - 1)];
+      const a = bus.loop[bus.segIdx];
+      const b = bus.loop[bus.segIdx + 1];
+      if (!a || !b) return;
       const lat = a.lat + (b.lat - a.lat) * bus.t;
       const lng = a.lng + (b.lng - a.lng) * bus.t;
       bus.marker.setLatLng([lat, lng]);
     });
   }, TICK);
 
-  setStatus('▶ Simulation running — buses are moving!');
+  setStatus('▶ Simulation running — A→B→A loop with waypoints!');
+}
+
+// Build a seamless A→B→A loop point sequence
+// Buses travel: A[0]→...→A[last], then B[0]→...→B[last], repeat
+// Waypoints at end of A and start of B provide smooth transitions
+function buildLoopSequence(pointsA, pointsB) {
+  if (pointsA.length >= 2 && pointsB.length >= 2) {
+    // A forward, then B forward; the last point of A connects to first of B
+    // and last of B connects back to first of A — forming a closed loop
+    return [...pointsA, ...pointsB];
+  } else if (pointsA.length >= 2) {
+    // Only A defined — bounce A forward then backward
+    return [...pointsA, ...[...pointsA].reverse().slice(1)];
+  } else if (pointsB.length >= 2) {
+    return [...pointsB, ...[...pointsB].reverse().slice(1)];
+  }
+  return [];
 }
 
 function stopSim() {
@@ -911,7 +1278,6 @@ function stopSim() {
   state.simInterval = null;
   document.getElementById('sim-btn').textContent = '▶ Start Sim';
   document.getElementById('sim-btn').classList.remove('running');
-
   state.simBuses.forEach(b => { if (b.marker) map.removeLayer(b.marker); });
   state.simBuses = [];
   setStatus('■ Simulation stopped.');
