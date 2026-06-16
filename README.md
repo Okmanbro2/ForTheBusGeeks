@@ -13,12 +13,13 @@ You can play it here: https://okmanbro2.github.io/ForTheBusGeeks/
 # Miscellaneous
 <details>
   <summary>Changelog</summary>
+  <li>Fixed issues regarding visual bus marker</li>
+  <li>Quality of life features</li>
 </details>
 <details>
   <summary>Todo List</summary>
-  <li>Test</li>
-  <li>Test</li>
-  <li>Test</li>
-  <li>Test</li>
+  <li>More stats (Ridership, cost, etc.)</li>
+  <li>Simpler UI</li>
+  <li>Respective depots (e.g., seperate categories for your routes)</li>
 </details>
 
