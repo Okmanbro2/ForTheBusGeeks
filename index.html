@@ -273,10 +273,28 @@
     font-size: 11px; font-weight: 800; padding: 2px 8px;
     border-radius: 4px; color: #000;
   }
-  .route-name { font-size: 12px; font-weight: 700; flex: 1; }
+  .route-name { font-size: 12px; font-weight: 700; flex: 1; overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
   .route-expand { color: var(--muted); font-size: 12px; }
   .route-body { display: none; padding: 10px; background: var(--surface); }
   .route-body.open { display: block; }
+
+  /* ── Depot grouping ── */
+  .depot-section { margin-bottom: 14px; }
+  .depot-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 2px; margin-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .depot-title { font-size: 13px; font-weight: 800; color: var(--text); flex: 1; }
+  .depot-count { font-size: 10px; color: var(--muted); }
+  .depot-actions { display:flex; gap:4px; }
+  .depot-actions button { font-size: 10px; padding: 2px 6px; }
+  .depot-routes { display: flex; flex-direction: column; gap: 8px; }
+  .icon-btn {
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    font-size: 12px; padding: 2px 4px; border-radius: 4px;
+  }
+  .icon-btn:hover { color: var(--text); background: var(--bg); }
 
   .side-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
   .side-tab {
@@ -354,6 +372,19 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
+  /* ── Bus rich tooltip ── */
+  .bus-rich-tooltip .leaflet-tooltip-content { padding: 0; }
+  .leaflet-tooltip.bus-rich-tooltip {
+    background: #1a1d27;
+    border: 1px solid #2c2f3f;
+    border-radius: 8px;
+    color: #e8eaf0;
+    padding: 8px 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    max-width: 340px;
+  }
+  .leaflet-tooltip.bus-rich-tooltip::before { border-top-color: #2c2f3f; }
+
   /* ── Leaflet overrides ── */
   .leaflet-popup-content-wrapper {
     background: var(--surface); color: var(--text);
@@ -397,7 +428,8 @@
     <button class="tool-btn" id="btn-stop"       onclick="setTool('stop')">🔵 Add Stop</button>
     <button class="tool-btn" id="btn-waypoint"   onclick="setTool('waypoint')">◆ Add Waypoint</button>
     <button class="tool-btn" id="btn-route"      onclick="setTool('route')">➕ New Route</button>
-    <button class="tool-btn" id="btn-toggle-wp"  onclick="toggleWaypointVisibility()">👁 Waypoints</button>
+    <button class="tool-btn" id="btn-toggle-wp"  onclick="toggleWaypointVisibility()">👁‍🗨 Waypoints</button>
+    <button class="tool-btn" id="btn-toggle-stops" onclick="toggleStopVisibility()">🔵‍🗨 Stops</button>
   </div>
 
   <div class="sep"></div>
@@ -440,14 +472,44 @@
     <div class="tab-content" id="tab-routes">
       <button class="btn btn-accent btn-full" onclick="openNewRouteForm()">➕ Create Route</button>
 
+      <div class="card" style="margin-top:8px;">
+        <div class="card-header">
+          <span class="card-title">Depots</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:4px;">
+          <input type="text" id="new-depot-name" placeholder="e.g. Kingsbridge Depot" style="flex:1;margin-bottom:0;"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();createDepot();}" />
+          <button class="btn btn-accent" style="padding:4px 12px;" onclick="createDepot()">+</button>
+        </div>
+        <div id="depot-manage-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+      </div>
+
       <!-- New Route Form -->
       <div class="card" id="new-route-form" style="display:none;">
         <div class="card-header">
-          <span class="card-title">New Route</span>
+          <span class="card-title" id="nr-form-title">New Route</span>
           <button class="btn btn-muted" style="padding:2px 8px;font-size:11px;" onclick="closeNewRouteForm()">✕</button>
         </div>
         <label>Route Name</label>
         <input type="text" id="nr-name" placeholder="e.g. Bx15" />
+
+        <label>Side A Destination</label>
+        <input type="text" id="nr-destA" placeholder="e.g. Fordham Plaza" />
+
+        <label>Side B Destination</label>
+        <input type="text" id="nr-destB" placeholder="e.g. Hub 149 St" />
+
+        <label>Via</label>
+        <div id="nr-via-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <input type="text" id="nr-via-input" placeholder="e.g. 3 Av" style="flex:1;margin-bottom:0;"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addViaEntry();}" />
+          <button class="btn btn-accent" style="padding:4px 12px;" onclick="addViaEntry()">+</button>
+        </div>
+
+        <label>Full Name Preview</label>
+        <div id="nr-full-preview" style="font-size:12px;color:var(--muted);padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;margin-bottom:10px;min-height:16px;">—</div>
+
         <label>Service Type</label>
         <div class="type-chips" id="nr-type-chips">
           <div class="chip local selected" onclick="selectRouteType('local')">Local</div>
@@ -456,9 +518,11 @@
         </div>
         <label>Route Color</label>
         <input type="color" id="nr-color" value="#f5a623" style="width:48px;height:28px;padding:2px;background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;margin-bottom:8px;" />
-        <label>Buses on this route</label>
-        <input type="number" id="nr-buses" value="1" min="1" max="20" />
-        <button class="btn btn-accent btn-full" onclick="createRoute()">Create</button>
+
+        <label>Depot</label>
+        <select id="nr-depot" style="margin-bottom:10px;"></select>
+
+        <button class="btn btn-accent btn-full" id="nr-submit-btn" onclick="submitRouteForm()">Create</button>
       </div>
 
       <div id="route-list"></div>
@@ -478,15 +542,39 @@ const state = {
   stops: [],
   // stops: { id, name, lat, lng, types:[], marker, isWaypoint:bool }
   routes: [],
-  // routes: { id, name, type, color, buses:n, sideA:[], sideB:[], polyA, polyB, activeSide:'A' }
+  // routes: { id, name, destA, destB, vias:[], depotId, type, color, buses:n, sideA:[], sideB:[], polyA, polyB, activeSide:'A' }
+  depots: [],
+  // depots: { id, name }
+  depotIdCounter: 0,
   simRunning: false,
   simBuses: [],
   simInterval: null,
   speedMult: 5,
   stopIdCounter: 0,
   routeIdCounter: 0,
-  waypointsVisible: true,
+  waypointsVisible: false,
+  stopsVisible: false, // global stop-marker visibility (separate from waypoints toggle)
 };
+
+// Builds the full descriptive route name from structured fields, e.g.
+// "Bx15 Fordham Plaza/Hub 149 St via 3 Av, 149 St"
+// Falls back gracefully for legacy routes that only have a free-text `name`
+// and empty destA/destB/vias — in that case just the stored name is used.
+function buildFullRouteName(r) {
+  const hasStructured = r.destA || r.destB || (r.vias && r.vias.length);
+  if (!hasStructured) return r.name;
+
+  let full = r.name || '';
+  if (r.destA && r.destB) {
+    full += ` ${r.destA}/${r.destB}`;
+  } else if (r.destA || r.destB) {
+    full += ` ${r.destA || r.destB}`;
+  }
+  if (r.vias && r.vias.length) {
+    full += ` via ${r.vias.join(', ')}`;
+  }
+  return full.trim();
+}
 
 let selectedRouteType = 'local';
 // Track which seq-item is currently being edited: { routeId, side, stopId }
@@ -556,6 +644,24 @@ function toggleWaypointVisibility() {
     }
   });
   setStatus(state.waypointsVisible ? '◆ Waypoints visible' : '◆ Waypoints hidden');
+}
+
+function toggleStopVisibility() {
+  state.stopsVisible = !state.stopsVisible;
+  const btn = document.getElementById('btn-toggle-stops');
+  btn.textContent = state.stopsVisible ? '🔵 Stops' : '🔵‍🗨 Stops';
+  btn.style.opacity = state.stopsVisible ? '1' : '0.5';
+
+  state.stops.forEach(s => {
+    if (!s.isWaypoint && s.marker) {
+      if (state.stopsVisible) {
+        s.marker.addTo(map);
+      } else {
+        map.removeLayer(s.marker);
+      }
+    }
+  });
+  setStatus(state.stopsVisible ? '🔵 Stops visible' : '🔵 Stops hidden');
 }
 
 // ════════════════════════════════════════════
@@ -700,6 +806,7 @@ function createStopMarker(stop) {
     L.DomEvent.stopPropagation(e);
     openEditStopPopup(stop);
   });
+  if (!state.stopsVisible) map.removeLayer(stop.marker);
 }
 
 function confirmStop(id) {
@@ -902,12 +1009,55 @@ function focusStop(id) {
 // ════════════════════════════════════════════
 //  ROUTE MANAGEMENT
 // ════════════════════════════════════════════
+// Transient state for the open New/Edit Route form
+let nrFormState = {
+  editingRouteId: null, // null = creating a new route; otherwise editing existing
+  vias: [],
+};
+
 function openNewRouteForm() {
   switchTab('routes');
+  nrFormState = { editingRouteId: null, vias: [] };
+  document.getElementById('nr-form-title').textContent = 'New Route';
+  document.getElementById('nr-submit-btn').textContent = 'Create';
+  document.getElementById('nr-name').value = '';
+  document.getElementById('nr-destA').value = '';
+  document.getElementById('nr-destB').value = '';
+  document.getElementById('nr-via-input').value = '';
+  document.getElementById('nr-color').value = '#f5a623';
+  selectRouteType('local');
+  populateDepotSelect(null);
+  renderViaList();
+  updateFullNamePreview();
   document.getElementById('new-route-form').style.display = 'block';
 }
+
+// Open the same form pre-filled for editing an existing route's info
+// (name, destinations, vias, type, color, depot) — separate from the
+// stop/waypoint sequence editing that happens in the route body.
+function openEditRouteForm(routeId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  switchTab('routes');
+  nrFormState = { editingRouteId: routeId, vias: [...(r.vias || [])] };
+  document.getElementById('nr-form-title').textContent = `Edit Route — ${r.name}`;
+  document.getElementById('nr-submit-btn').textContent = 'Save Changes';
+  document.getElementById('nr-name').value = r.name || '';
+  document.getElementById('nr-destA').value = r.destA || '';
+  document.getElementById('nr-destB').value = r.destB || '';
+  document.getElementById('nr-via-input').value = '';
+  document.getElementById('nr-color').value = r.color || '#f5a623';
+  selectRouteType(r.type || 'local');
+  populateDepotSelect(r.depotId || null);
+  renderViaList();
+  updateFullNamePreview();
+  document.getElementById('new-route-form').style.display = 'block';
+  document.getElementById('new-route-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 function closeNewRouteForm() {
   document.getElementById('new-route-form').style.display = 'none';
+  nrFormState = { editingRouteId: null, vias: [] };
 }
 
 function selectRouteType(t) {
@@ -916,18 +1066,104 @@ function selectRouteType(t) {
   document.querySelector(`#nr-type-chips .chip.${t}`).classList.add('selected');
 }
 
-function createRoute() {
+function addViaEntry() {
+  const input = document.getElementById('nr-via-input');
+  const val = input.value.trim();
+  if (!val) return;
+  nrFormState.vias.push(val);
+  input.value = '';
+  renderViaList();
+  updateFullNamePreview();
+}
+
+function removeViaEntry(idx) {
+  nrFormState.vias.splice(idx, 1);
+  renderViaList();
+  updateFullNamePreview();
+}
+
+function renderViaList() {
+  const el = document.getElementById('nr-via-list');
+  if (!nrFormState.vias.length) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = nrFormState.vias.map((v, i) => `
+    <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:4px 8px;font-size:12px;">
+      <span style="flex:1;">${v}</span>
+      <button class="seq-remove" onclick="removeViaEntry(${i})">✕</button>
+    </div>`).join('');
+}
+
+function updateFullNamePreview() {
+  const preview = document.getElementById('nr-full-preview');
+  const draft = {
+    name: document.getElementById('nr-name').value.trim() || '(route name)',
+    destA: document.getElementById('nr-destA').value.trim(),
+    destB: document.getElementById('nr-destB').value.trim(),
+    vias: nrFormState.vias,
+  };
+  preview.textContent = buildFullRouteName(draft) || '—';
+}
+
+function populateDepotSelect(selectedId) {
+  const sel = document.getElementById('nr-depot');
+  const opts = ['<option value="">— No depot —</option>']
+    .concat(state.depots.map(d => `<option value="${d.id}">${d.name}</option>`));
+  sel.innerHTML = opts.join('');
+  sel.value = selectedId ? String(selectedId) : '';
+}
+
+// Live-update the preview as the user types
+document.addEventListener('input', (e) => {
+  if (['nr-name', 'nr-destA', 'nr-destB'].includes(e.target.id)) {
+    updateFullNamePreview();
+  }
+});
+
+function submitRouteForm() {
   const name  = document.getElementById('nr-name').value.trim();
+  const destA = document.getElementById('nr-destA').value.trim();
+  const destB = document.getElementById('nr-destB').value.trim();
   const color = document.getElementById('nr-color').value;
-  const buses = parseInt(document.getElementById('nr-buses').value) || 1;
+  const depotVal = document.getElementById('nr-depot').value;
+  const depotId = depotVal ? parseInt(depotVal) : null;
+  if (!name) { alert('Enter a route name.'); return; }
+
+  if (nrFormState.editingRouteId) {
+    const r = state.routes.find(x => x.id === nrFormState.editingRouteId);
+    if (!r) return;
+    r.name = name;
+    r.destA = destA;
+    r.destB = destB;
+    r.vias = [...nrFormState.vias];
+    r.type = selectedRouteType;
+    r.color = color;
+    r.depotId = depotId;
+    closeNewRouteForm();
+    redrawRouteLines();
+    renderRouteList();
+    renderDepotList();
+    setStatus(`✏️ Route "${name}" updated`);
+    return;
+  }
+
+  createRoute(name, destA, destB, color, depotId);
+}
+
+function createRoute(name, destA, destB, color, depotId) {
   if (!name) { alert('Enter a route name.'); return; }
 
   const route = {
     id: ++state.routeIdCounter,
     name,
+    destA: destA || '',
+    destB: destB || '',
+    vias: [...nrFormState.vias],
+    depotId: depotId || null,
     type: selectedRouteType,
     color,
-    buses,          // kept for save/load compat
+    buses: 0,          // kept for save/load compat
     fleetList: [],
     fleetIdCounter: 0,
     sideA: [],   // array of stopIds (stops + waypoints)
@@ -940,9 +1176,9 @@ function createRoute() {
   };
   state.routes.push(route);
   closeNewRouteForm();
-  document.getElementById('nr-name').value = '';
   renderRouteList();
-  setStatus(`🛣 Route "${name}" created — add stops in Routes tab`);
+  renderDepotList();
+  setStatus(`🛣 Route "${buildFullRouteName(route)}" created — add stops in Routes tab`);
 }
 
 function deleteRoute(id) {
@@ -1103,6 +1339,14 @@ function buildRouteBody(r) {
   `;
 
   return `
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <span style="font-size:10px;color:var(--muted);">Depot:</span>
+      <select style="flex:1;font-size:11px;padding:3px 6px;margin:0;" onchange="setRouteDepot(${r.id}, this.value)">
+        <option value="">— No depot —</option>
+        ${state.depots.map(d => `<option value="${d.id}" ${r.depotId===d.id?'selected':''}>${d.name}</option>`).join('')}
+      </select>
+    </div>
+
     <div class="side-tabs">
       <div class="side-tab ${side==='A'?'active':''}" onclick="setActiveSide(${r.id},'A')">Side A</div>
       <div class="side-tab ${side==='B'?'active':''}" onclick="setActiveSide(${r.id},'B')">Side B</div>
@@ -1206,8 +1450,9 @@ function spawnBus(routeId, serviceType='local') {
         delayRemaining: 0, // live-spawned buses start immediately from stop 1
         marker: L.marker([startPt.lat, startPt.lng], { icon, zIndexOffset: 500 })
           .addTo(map)
-          .bindTooltip(`${r.name} · ${svcType.toUpperCase()}`, { permanent: false, direction: 'top' }),
+          ,
       };
+      attachBusTooltip(bus);
       state.simBuses.push(bus);
       setStatus(`🚌 Bus spawned on ${r.name} — departing from Side A start`);
       return;
@@ -1389,7 +1634,7 @@ function buildRouteStatsTooltip(r, coordsA, coordsB) {
 
   return `
     <div style="font-size:11px;line-height:1.5;">
-      <div style="font-weight:800;color:${r.color};margin-bottom:2px;">${r.name}</div>
+      <div style="font-weight:800;color:${r.color};margin-bottom:2px;">${buildFullRouteName(r)}</div>
       <div><strong>Type:</strong> ${r.type.toUpperCase()}</div>
       <div><strong>Side A:</strong> ${milesA.toFixed(2)} mi</div>
       <div><strong>Side B:</strong> ${milesB.toFixed(2)} mi</div>
@@ -1453,7 +1698,76 @@ function drawSideBWithBranching(r, coordsB, coordsA, edgeUsage, edgeKey) {
 }
 
 // ════════════════════════════════════════════
-//  ROUTE LIST RENDER (full rebuild)
+//  DEPOTS (organizational grouping only — no sim effect)
+// ════════════════════════════════════════════
+function createDepot() {
+  const input = document.getElementById('new-depot-name');
+  const name = input.value.trim();
+  if (!name) return;
+  state.depots.push({ id: ++state.depotIdCounter, name });
+  input.value = '';
+  renderDepotList();
+  renderRouteList();
+  setStatus(`🏢 Depot "${name}" created`);
+}
+
+function renameDepot(id) {
+  const d = state.depots.find(x => x.id === id);
+  if (!d) return;
+  const next = prompt('Rename depot:', d.name);
+  if (next === null) return;
+  const trimmed = next.trim();
+  if (!trimmed) return;
+  d.name = trimmed;
+  renderDepotList();
+  renderRouteList();
+}
+
+function deleteDepot(id) {
+  const d = state.depots.find(x => x.id === id);
+  if (!d) return;
+  const routeCount = state.routes.filter(r => r.depotId === id).length;
+  const msg = routeCount
+    ? `Delete depot "${d.name}"? Its ${routeCount} route(s) will become unassigned (they will NOT be deleted).`
+    : `Delete depot "${d.name}"?`;
+  if (!confirm(msg)) return;
+  state.routes.forEach(r => { if (r.depotId === id) r.depotId = null; });
+  state.depots = state.depots.filter(x => x.id !== id);
+  renderDepotList();
+  renderRouteList();
+  setStatus(`🗑 Depot "${d.name}" deleted`);
+}
+
+function renderDepotList() {
+  const el = document.getElementById('depot-manage-list');
+  if (!el) return;
+  if (!state.depots.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);">No depots yet. Add one above to start organizing routes.</div>';
+    return;
+  }
+  el.innerHTML = state.depots.map(d => {
+    const count = state.routes.filter(r => r.depotId === d.id).length;
+    return `
+      <div style="display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:5px;border:1px solid var(--border);font-size:11px;">
+        <span style="flex:1;font-weight:600;">${d.name}</span>
+        <span style="color:var(--muted);font-size:10px;">${count} route${count===1?'':'s'}</span>
+        <button class="icon-btn" onclick="renameDepot(${d.id})" title="Rename">✏️</button>
+        <button class="icon-btn" onclick="deleteDepot(${d.id})" title="Delete">🗑</button>
+      </div>`;
+  }).join('');
+}
+
+// Move a route to a different depot (or unassign with null) from the route header
+function setRouteDepot(routeId, depotVal) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  r.depotId = depotVal ? parseInt(depotVal) : null;
+  renderRouteList();
+  renderDepotList();
+}
+
+// ════════════════════════════════════════════
+//  ROUTE LIST RENDER (grouped by depot)
 // ════════════════════════════════════════════
 function renderRouteList() {
   const el = document.getElementById('route-list');
@@ -1465,29 +1779,105 @@ function renderRouteList() {
   // Remember which bodies were open
   const openIds = new Set(
     state.routes.filter(r => {
-      const el = document.getElementById(`rb-${r.id}`);
-      return el && el.classList.contains('open');
+      const bodyEl = document.getElementById(`rb-${r.id}`);
+      return bodyEl && bodyEl.classList.contains('open');
     }).map(r => r.id)
   );
 
-  el.innerHTML = state.routes.map(r => `
+  function renderRouteCard(r) {
+    const fullName = buildFullRouteName(r);
+    return `
     <div class="route-item" id="ri-${r.id}">
       <div class="route-header" onclick="toggleRouteBody(${r.id})">
         <div class="route-badge" style="background:${r.color};">${r.name}</div>
         <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
-        <span class="route-name"></span>
-        <span style="font-size:10px;color:var(--muted);">${(r.fleetList||[{},{}]).length} bus${(r.fleetList||[{},{}]).length>1?'es':''}</span>
+        <span class="route-name" title="${fullName}">${fullName}</span>
+        <span style="font-size:10px;color:var(--muted);">${(r.fleetList||[]).length} bus${(r.fleetList||[]).length===1?'':'es'}</span>
+        <button class="icon-btn" onclick="event.stopPropagation();openEditRouteForm(${r.id})" title="Edit route info">✏️</button>
         <span class="route-expand">▾</span>
       </div>
       <div class="route-body${openIds.has(r.id)?' open':''}" id="rb-${r.id}">
         ${buildRouteBody(r)}
       </div>
-    </div>`).join('');
+    </div>`;
+  }
+
+  const grouped = state.depots.map(d => ({
+    depot: d,
+    routes: state.routes.filter(r => r.depotId === d.id),
+  }));
+  const unassigned = state.routes.filter(r => !r.depotId || !state.depots.find(d => d.id === r.depotId));
+
+  let html = '';
+
+  grouped.forEach(({ depot, routes }) => {
+    html += `
+      <div class="depot-section">
+        <div class="depot-header">
+          <span class="depot-title">🏢 ${depot.name}</span>
+          <span class="depot-count">${routes.length} route${routes.length===1?'':'s'}</span>
+        </div>
+        <div class="depot-routes">
+          ${routes.length ? routes.map(renderRouteCard).join('') : '<div style="font-size:11px;color:var(--muted);padding:0 2px;">No routes assigned. Use a route\'s ✏️ edit button to assign it here.</div>'}
+        </div>
+      </div>`;
+  });
+
+  if (unassigned.length || !state.depots.length) {
+    html += `
+      <div class="depot-section">
+        <div class="depot-header">
+          <span class="depot-title">${state.depots.length ? '📭 Unassigned' : '🚌 All Routes'}</span>
+          <span class="depot-count">${unassigned.length} route${unassigned.length===1?'':'s'}</span>
+        </div>
+        <div class="depot-routes">
+          ${unassigned.map(renderRouteCard).join('')}
+        </div>
+      </div>`;
+  }
+
+  el.innerHTML = html;
 }
 
 function toggleRouteBody(id) {
   const el = document.getElementById(`rb-${id}`);
-  if (el) el.classList.toggle('open');
+  if (!el) return;
+  const isOpening = !el.classList.contains('open');
+  el.classList.toggle('open');
+
+  // Close any other open route bodies (single-route editing focus) and
+  // hide their temporarily-shown stop markers.
+  document.querySelectorAll('.route-body.open').forEach(otherEl => {
+    if (otherEl !== el) {
+      const otherId = parseInt(otherEl.id.replace('rb-', ''));
+      otherEl.classList.remove('open');
+      setRouteStopMarkersTemporaryVisibility(otherId, false);
+    }
+  });
+
+  setRouteStopMarkersTemporaryVisibility(id, isOpening);
+}
+
+// While a route is being edited, show ITS stops/waypoints regardless of the
+// global toggles, so building a route doesn't require turning everything on.
+// When editing ends, markers revert to whatever the global toggles say.
+function setRouteStopMarkersTemporaryVisibility(routeId, show) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  const ids = new Set([...r.sideA, ...r.sideB]);
+  // Also include all eligible stops/waypoints (not just ones already on the
+  // route) so they're visible to pick from while editing.
+  state.stops.forEach(s => ids.add(s.id));
+
+  state.stops.forEach(s => {
+    if (!ids.has(s.id) || !s.marker) return;
+    if (show) {
+      s.marker.addTo(map);
+    } else {
+      const globalVisible = s.isWaypoint ? state.waypointsVisible : state.stopsVisible;
+      if (!globalVisible) map.removeLayer(s.marker);
+    }
+  });
 }
 
 function getRouteBounds(id) {
@@ -1610,6 +2000,69 @@ function switchTab(name) {
   document.getElementById('tab-routes').classList.toggle('active', name==='routes');
 }
 
+
+// ════════════════════════════════════════════
+//  BUS TOOLTIP BUILDER
+// ════════════════════════════════════════════
+function buildBusTooltipHTML(bus) {
+  const r = state.routes.find(x => x.id === bus.routeId);
+  const svcType = bus.serviceType || bus.type;
+  const svcLabel = svcType === 'sbs' ? 'SBS' : svcType === 'limited' ? 'LIMITED' : 'LOCAL';
+  const svcColor = svcType === 'sbs' ? '#3b82f6' : svcType === 'limited' ? '#f59e0b' : '#22c55e';
+  const svcTextColor = svcType === 'sbs' ? '#fff' : '#000';
+
+  // Use the route's named destinations directly
+  let rawDest = '—';
+  if (r) {
+    const filterStops = pts => pts.filter(s => s.isWaypoint || (s.types && s.types.includes(svcType)));
+    const stopsA = filterStops(r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
+    const loopMid = stopsA.length;
+    const onSideA = bus.segIdx < loopMid;
+    rawDest = (onSideA ? r.destA : r.destB) || '—';
+  }
+
+  // Split on first comma: "St Raymond's Cemetery, Throggs Neck"
+  // → main = "ST RAYMOND'S CEMETERY", sub = "THROGGS NECK"
+  const commaIdx = rawDest.indexOf(',');
+  const hasSubtitle = commaIdx !== -1;
+  const mainDest = (hasSubtitle ? rawDest.slice(0, commaIdx) : rawDest).trim().toUpperCase();
+  const subDest  = hasSubtitle ? rawDest.slice(commaIdx + 1).trim().toUpperCase() : null;
+
+  const destHTML = hasSubtitle
+    ? `<div style="text-align:center;line-height:1.25;">
+        <div style="font-size:13px;font-weight:800;color:#e8eaf0;">${mainDest}</div>
+        <div style="font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.03em;">${subDest}</div>
+       </div>`
+    : `<span style="font-size:13px;font-weight:800;color:#e8eaf0;">${mainDest}</span>`;
+
+  return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
+    <span style="font-size:14px;font-weight:800;color:#e8eaf0;">${bus.name}</span>
+    <span style="font-size:13px;color:#3c3f52;">·</span>
+    ${destHTML}
+    <span style="font-size:13px;color:#3c3f52;">·</span>
+    <span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:3px;background:${svcColor};color:${svcTextColor};line-height:1.8;">${svcLabel}</span>
+  </div>`;
+}
+
+function attachBusTooltip(bus) {
+  bus.marker.unbindTooltip();
+  bus.marker.bindTooltip(() => buildBusTooltipHTML(bus), {
+    permanent: false,
+    direction: 'top',
+    className: 'bus-rich-tooltip',
+    offset: [0, -4],
+    opacity: 1,
+    interactive: false,
+  });
+  // Re-open tooltip on mouseover so it always shows even during dwell
+  bus.marker.off('mouseover').on('mouseover', function() {
+    this.openTooltip();
+  });
+  bus.marker.off('mouseout').on('mouseout', function() {
+    this.closeTooltip();
+  });
+}
+
 // ════════════════════════════════════════════
 //  SIMULATION  (A→B→A looping with waypoints)
 // ════════════════════════════════════════════
@@ -1729,10 +2182,7 @@ function startSim() {
         marker: (() => {
             const marker = L.marker(
             [startPt.lat, startPt.lng],
-            { icon, zIndexOffset: 500 }
-            ).bindTooltip(
-            `${r.name} · ${svcType.toUpperCase()}`,
-            { permanent:false, direction:'top' }
+            { icon, zIndexOffset: 500, interactive: true }
             );
 
         if (delayTicks === 0) {
@@ -1742,6 +2192,7 @@ function startSim() {
         return marker;
         })(),
         };
+      attachBusTooltip(bus);
       state.simBuses.push(bus);
     });
   });
@@ -1759,15 +2210,24 @@ function startSim() {
           ) {
             bus.visible = true;
             bus.marker.addTo(map);
-            const el = bus.marker.getElement();
-        
-            if (el) {
-              el.style.opacity = '0';
-              el.style.transition = 'opacity 1s ease';
-        
-              requestAnimationFrame(() => {
-                el.style.opacity = '1';
-              });
+
+            // Fade in via Leaflet's own setOpacity (never touches CSS transition,
+            // so it can't interfere with Leaflet's own zoom/position writes).
+            // Wrapped defensively — if anything here fails, the bus must still
+            // end up fully visible rather than stuck invisible.
+            try {
+              bus.marker.setOpacity(0);
+              let frame = 0;
+              const FADE_STEPS = 12;
+              const fadeTimer = setInterval(() => {
+                frame++;
+                try {
+                  bus.marker.setOpacity(Math.min(1, frame / FADE_STEPS));
+                } catch (e) { /* marker may have been removed mid-fade */ }
+                if (frame >= FADE_STEPS) clearInterval(fadeTimer);
+              }, TICK);
+            } catch (e) {
+              bus.marker.setOpacity(1);
             }
             bus.fadedIn = true;
           }
@@ -1793,6 +2253,8 @@ function startSim() {
           if (arrivedAt && !arrivedAt.isWaypoint) {
             bus.dwellRemaining = DWELL_MS;
             remaining = 0;
+            // Refresh tooltip so destination updates as bus crosses side boundary
+            attachBusTooltip(bus);
           }
         }
       }
@@ -1858,19 +2320,21 @@ function updateSpeed(v) {
 // ════════════════════════════════════════════
 function saveToFile() {
   const data = {
-    version: 1,
+    version: 2,
     savedAt: new Date().toISOString(),
     stopIdCounter: state.stopIdCounter,
     routeIdCounter: state.routeIdCounter,
+    depotIdCounter: state.depotIdCounter,
+    depots: state.depots.map(d => ({ id: d.id, name: d.name })),
     stops: state.stops.map(s => ({
       id: s.id, name: s.name, lat: s.lat, lng: s.lng,
       types: s.types, isWaypoint: !!s.isWaypoint,
     })),
     routes: state.routes.map(r => ({
-      id: r.id, name: r.name, type: r.type, color: r.color, buses: r.buses,
-    fleetList: r.fleetList && r.fleetList.length ? r.fleetList : Array.from({length: r.buses||1},(_,i)=>({id:i+1,serviceType:r.type})),
-    fleetIdCounter: r.fleetIdCounter || (r.buses || 1),
-      fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 1,
+      id: r.id, name: r.name, destA: r.destA || '', destB: r.destB || '',
+      vias: r.vias || [], depotId: r.depotId || null,
+      type: r.type, color: r.color, buses: r.buses,
+      fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
       sideA: r.sideA, sideB: r.sideB, activeSide: r.activeSide,
     })),
   };
@@ -1932,9 +2396,16 @@ function applyLoadedData(data) {
     return stop;
   });
 
+  // Rebuild depots
+  state.depots = (data.depots || []).map(d => ({ id: d.id, name: d.name }));
+
   // Rebuild routes
   state.routes = data.routes.map(r => ({
-    id: r.id, name: r.name, type: r.type, color: r.color, buses: r.buses,
+    id: r.id, name: r.name,
+    destA: r.destA || '', destB: r.destB || '', vias: r.vias || [],
+    depotId: r.depotId || null,
+    type: r.type, color: r.color, buses: r.buses || 0,
+    fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
     sideA: r.sideA || [], sideB: r.sideB || [],
     polyA: null, polysA: [], polyB: null, polysB: [],
     activeSide: r.activeSide || 'A',
@@ -1942,14 +2413,17 @@ function applyLoadedData(data) {
 
   state.stopIdCounter = data.stopIdCounter || Math.max(0, ...state.stops.map(s => s.id), 0);
   state.routeIdCounter = data.routeIdCounter || Math.max(0, ...state.routes.map(r => r.id), 0);
+  state.depotIdCounter = data.depotIdCounter || Math.max(0, ...state.depots.map(d => d.id), 0);
 
   // Clear any in-progress UI selections
   window._multiAddOrder = {};
+  window._spawnType = {};
   editingSeqItem = null;
 
   redrawRouteLines();
   renderStopList();
   renderRouteList();
+  renderDepotList();
 
   // Fit map to loaded content
   if (state.stops.length) {
@@ -1968,6 +2442,7 @@ function setStatus(msg) {
 // Init renders
 renderStopList();
 renderRouteList();
+renderDepotList();
 </script>
 </body>
 </html>
