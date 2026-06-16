@@ -335,6 +335,16 @@
   .bus-config { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
   .bus-config label { margin: 0; white-space: nowrap; }
   .bus-config input { width: 50px; margin: 0; }
+  .fleet-item {
+    display:flex;align-items:center;gap:5px;padding:4px 8px;
+    border-radius:5px;border:1px solid var(--border);
+    background:var(--bg);font-size:11px;
+  }
+  .fleet-item .fleet-label { flex:1; font-weight:600; color:var(--muted); }
+  .fleet-type-btn {
+    font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;
+    border:1px solid transparent;cursor:pointer;transition:all 0.12s;
+  }
 
   /* ── Empty states ── */
   .empty { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0; }
@@ -917,7 +927,9 @@ function createRoute() {
     name,
     type: selectedRouteType,
     color,
-    buses,
+    buses,          // kept for save/load compat
+    fleetList: [],
+    fleetIdCounter: 0,
     sideA: [],   // array of stopIds (stops + waypoints)
     sideB: [],
     polyA: null,
@@ -998,6 +1010,15 @@ function saveSeqEdit(routeId, stopId) {
   editingSeqItem = null;
   rerenderRouteBody(routeId);
 }
+
+map.on('zoomstart', () => {
+  state.simBuses.forEach(bus => {
+    if (bus.marker) {
+      const p = bus.marker.getLatLng();
+      bus.marker.setLatLng(p);
+    }
+  });
+});
 
 // ════════════════════════════════════════════
 //  SELECTIVE RE-RENDER (keeps panel open!)
@@ -1106,12 +1127,109 @@ function buildRouteBody(r) {
       </div>
     </div>
 
-    <div style="margin-top:10px;display:flex;gap:6px;">
+    <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:6px;">🚌 Fleet</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;">
+        ${buildFleetHTML(r)}
+      </div>
+      <div style="display:flex;gap:4px;">
+<button class="btn btn-accent" style="flex:1;font-size:11px;" onclick="spawnBus(${r.id},'local')">+ Local</button>
+<button class="btn btn-muted" style="flex:1;font-size:11px;" onclick="spawnBus(${r.id},'limited')">+ Limited</button>
+<button class="btn btn-purple" style="flex:1;font-size:11px;" onclick="spawnBus(${r.id},'sbs')">+ SBS</button>
+</div>
+    </div>
+
+    <div style="margin-top:8px;display:flex;gap:6px;">
       <button class="btn btn-muted" style="flex:1;font-size:11px;"
         onclick="map.fitBounds(getRouteBounds(${r.id}))">🗺 Focus</button>
       <button class="btn btn-danger" style="flex:1;font-size:11px;"
         onclick="deleteRoute(${r.id})">🗑 Delete</button>
     </div>`;
+}
+
+// ════════════════════════════════════════════
+//  FLEET MANAGEMENT
+// ════════════════════════════════════════════
+function buildFleetHTML(r) {
+  if (!r.fleetList || !r.fleetList.length) {
+    return '<div style="font-size:11px;color:var(--muted);">No buses. Click Spawn Bus.</div>';
+  }
+  const TC = t => t==='sbs'?'#3b82f6':t==='limited'?'#f59e0b':'#22c55e';
+  const TL = t => t==='sbs'?'SBS':t==='limited'?'Ltd':'Lcl';
+  return r.fleetList.map((b, i) => {
+    return `<div class="fleet-item">
+      <span class="fleet-label">Bus ${i+1}</span>
+      ${['local','limited','sbs'].map(t => {
+        const active = b.serviceType === t;
+        return `<button class="fleet-type-btn"
+          style="background:${active ? TC(t) : 'var(--surface)'};
+                 color:${active ? (t==='sbs'?'#fff':'#000') : 'var(--muted)'};
+                 border-color:${active ? TC(t) : 'var(--border)'};"
+          onclick="setBusServiceType(${r.id},${b.id},'${t}')">${TL(t)}</button>`;
+      }).join('')}
+      <button class="seq-remove" onclick="removeBus(${r.id},${b.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function spawnBus(routeId, serviceType='local') {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  if (!r.fleetList) r.fleetList = [];
+  if (!r.fleetIdCounter) r.fleetIdCounter = r.fleetList.length;
+  r.fleetIdCounter++;
+  const busConfig = { id: r.fleetIdCounter, serviceType: serviceType || r.type };
+  r.fleetList.push(busConfig);
+  rerenderRouteBody(routeId);
+
+  // If simulation is running, immediately add a live bus starting at position 0
+  if (state.simRunning) {
+    const svcType = busConfig.serviceType || r.type;
+    const loopData = buildBusLoop(r, svcType);
+    if (loopData) {
+      const { fullLoop, segDistances } = loopData;
+      const startPt = fullLoop[0];
+      const { bgColor, icon } = makeBusMarker(r, svcType);
+      const bus = {
+        routeId:        r.id,
+        busFleetId:     busConfig.id,
+        color:          bgColor,
+        serviceType:    svcType,
+        type:           r.type,
+        name:           r.name,
+        loop:           fullLoop,
+        loopLen:        fullLoop.length,
+        segDistances,
+        segIdx:         0,
+        t:              0,
+        dwellRemaining: 0,
+        delayRemaining: 0, // live-spawned buses start immediately from stop 1
+        marker: L.marker([startPt.lat, startPt.lng], { icon, zIndexOffset: 500 })
+          .addTo(map)
+          .bindTooltip(`${r.name} · ${svcType.toUpperCase()}`, { permanent: false, direction: 'top' }),
+      };
+      state.simBuses.push(bus);
+      setStatus(`🚌 Bus spawned on ${r.name} — departing from Side A start`);
+      return;
+    }
+  }
+
+  setStatus(`🚌 Bus ${r.fleetList.length} added to ${r.name}`);
+}
+
+function removeBus(routeId, busId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  r.fleetList = r.fleetList.filter(b => b.id !== busId);
+  rerenderRouteBody(routeId);
+}
+
+
+function setBusServiceType(routeId, busId, type) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (b) { b.serviceType = type; rerenderRouteBody(routeId); }
 }
 
 // ════════════════════════════════════════════
@@ -1276,7 +1394,7 @@ function buildRouteStatsTooltip(r, coordsA, coordsB) {
       <div><strong>Side A:</strong> ${milesA.toFixed(2)} mi</div>
       <div><strong>Side B:</strong> ${milesB.toFixed(2)} mi</div>
       <div><strong>Total:</strong> ${totalMiles.toFixed(2)} mi</div>
-      <div><strong>Buses:</strong> ${r.buses}</div>
+      <div><strong>Buses:</strong> ${r.fleetList ? r.fleetList.length : r.buses}</div>
     </div>`;
 }
 
@@ -1358,7 +1476,7 @@ function renderRouteList() {
         <div class="route-badge" style="background:${r.color};">${r.name}</div>
         <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
         <span class="route-name"></span>
-        <span style="font-size:10px;color:var(--muted);">${r.buses} bus${r.buses>1?'es':''}</span>
+        <span style="font-size:10px;color:var(--muted);">${(r.fleetList||[{},{}]).length} bus${(r.fleetList||[{},{}]).length>1?'es':''}</span>
         <span class="route-expand">▾</span>
       </div>
       <div class="route-body${openIds.has(r.id)?' open':''}" id="rb-${r.id}">
@@ -1499,6 +1617,59 @@ function toggleSim() {
   state.simRunning ? stopSim() : startSim();
 }
 
+// ── helpers used by both startSim and spawnBus ──────────────────────────
+
+function buildBusLoop(r, svcType) {
+  const filterPts = pts => pts.filter(s => s.isWaypoint || (s.types && s.types.includes(svcType)));
+  let pointsA = filterPts(r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
+  let pointsB = filterPts(r.sideB.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
+
+  // Fallback: if a service pattern has too few eligible stops, use the route path.
+  if (pointsA.length < 2) {
+    pointsA = r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean);
+  }
+  if (pointsB.length < 2) {
+    pointsB = r.sideB.map(id => state.stops.find(s => s.id === id)).filter(Boolean);
+  }
+
+  if (pointsA.length < 2 && pointsB.length < 2) return null;
+  const fullLoop = buildLoopSequence(pointsA, pointsB);
+  if (fullLoop.length < 2) return null;
+  const segDistances = [];
+  for (let k = 0; k < fullLoop.length - 1; k++) {
+    const p1 = fullLoop[k], p2 = fullLoop[k+1];
+    segDistances.push(map.distance([p1.lat, p1.lng], [p2.lat, p2.lng]) || 1);
+  }
+  return { fullLoop, segDistances };
+}
+
+function makeBusMarker(r, svcType) {
+  const bgColor  = svcType==='sbs' ? '#3b82f6' : svcType==='limited' ? '#f59e0b' : r.color;
+  const txtColor = svcType==='sbs' ? '#fff' : '#000';
+  const label    = getBusLabel(r.name);
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="
+      min-width:18px;height:18px;border-radius:4px;padding:0 3px;
+      background:${bgColor};border:2px solid #fff;
+      display:flex;align-items:center;justify-content:center;
+      font-size:9px;font-weight:900;color:${txtColor};
+      box-shadow:0 2px 6px rgba(0,0,0,0.7);white-space:nowrap;
+    ">${label}</div>`,
+    iconSize: [18,18], iconAnchor: [9,9],
+  });
+  return { bgColor, icon };
+}
+
+// Estimate total loop travel time in ticks at current speedMult
+// (used to compute even headway delays between buses)
+function loopDurationTicks(segDistances) {
+  const TICK = 50;
+  const metersPerTick = state.speedMult * 0.275;
+  const totalMeters = segDistances.reduce((a, b) => a + b, 0);
+  return Math.max(1, Math.round(totalMeters / metersPerTick));
+}
+
 function startSim() {
   if (state.simRunning) return;
   state.simRunning = true;
@@ -1506,71 +1677,108 @@ function startSim() {
   document.getElementById('sim-btn').classList.add('running');
 
   state.simBuses = [];
-  state.routes.forEach(r => {
-    // Full ordered point arrays (stops + waypoints) for each side
-    const pointsA = r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean);
-    const pointsB = r.sideB.map(id => state.stops.find(s => s.id === id)).filter(Boolean);
-
-    if (pointsA.length < 2 && pointsB.length < 2) return;
-
-    for (let i = 0; i < r.buses; i++) {
-      // Build the full A→B→A loop sequence:
-      // A (forward) → B (forward) → repeat
-      // The transition from end-of-A to start-of-B is handled by waypoints at tail of A / head of B
-      const fullLoop = buildLoopSequence(pointsA, pointsB);
-      if (fullLoop.length < 2) continue;
-
-      const offset = i / r.buses;
-      const totalSegs = fullLoop.length - 1;
-      const absT = offset * totalSegs;
-      const segIdx = Math.floor(absT) % totalSegs;
-      const t = absT - Math.floor(absT);
-
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="
-          min-width:18px;height:18px;border-radius:4px;padding:0 3px;
-          background:${r.color};border:2px solid #fff;
-          display:flex;align-items:center;justify-content:center;
-          font-size:9px;font-weight:900;color:${r.type==='sbs'?'#fff':'#000'};
-          box-shadow:0 2px 6px rgba(0,0,0,0.7);white-space:nowrap;
-        ">${getBusLabel(r.name)}</div>`,
-        iconSize: [18,18], iconAnchor: [9,9],
-      });
-
-      // Precompute segment distances (meters) for constant-speed travel
-      const segDistances = [];
-      for (let k = 0; k < fullLoop.length - 1; k++) {
-        const p1 = fullLoop[k], p2 = fullLoop[k+1];
-        segDistances.push(map.distance([p1.lat, p1.lng], [p2.lat, p2.lng]) || 1);
-      }
-
-      const startPt = fullLoop[segIdx];
-      const bus = {
-        routeId: r.id,
-        color: r.color,
-        type: r.type,
-        name: r.name,
-        loop: fullLoop,   // the full A+B merged sequence
-        loopLen: fullLoop.length,
-        segDistances,
-        segIdx,
-        t,
-        marker: L.marker([startPt.lat, startPt.lng], { icon, zIndexOffset: 500 })
-          .addTo(map)
-          .bindTooltip(`${r.name}`, { permanent: false, direction: 'top' }),
-      };
-      state.simBuses.push(bus);
-    }
-  });
 
   const TICK = 50;
+  const DWELL_MS = 1500;
+
+  state.routes.forEach(r => {
+
+    // First simulation start: create fleet entries from bus count.
+    if ((!r.fleetList || !r.fleetList.length) && (r.buses || 0) > 0) {
+      r.fleetList = Array.from({length: r.buses}, (_, i) => ({
+        id: i + 1,
+        serviceType: r.type
+      }));
+      r.fleetIdCounter = r.buses;
+    }
+
+    const fleet = r.fleetList || [];
+    const totalBuses = fleet.length;
+
+    if (!totalBuses) return;
+
+    fleet.forEach((busConfig, i) => {
+      const svcType = busConfig.serviceType || r.type;
+      const loopData = buildBusLoop(r, svcType);
+      if (!loopData) return;
+
+      const { fullLoop, segDistances } = loopData;
+      const startPt = fullLoop[0]; // always start at the very first point of Side A
+
+      const { bgColor, icon } = makeBusMarker(r, svcType);
+
+      // Stagger buses using time-based delays so they are evenly headway-spaced.
+      // Bus 0 departs immediately; bus i waits (i / totalBuses) of the full loop duration.
+      const HEADWAY_SECONDS = 5;
+      const delayTicks = i * Math.round((HEADWAY_SECONDS * 1000) / TICK);
+
+      const bus = {
+        routeId:        r.id,
+        busFleetId:     busConfig.id,
+        color:          bgColor,
+        serviceType:    svcType,
+        type:           r.type,
+        name:           r.name,
+        loop:           fullLoop,
+        loopLen:        fullLoop.length,
+        segDistances,
+        segIdx:         0,
+        t:              0,
+        dwellRemaining: 0,
+        delayRemaining: delayTicks, // ticks to wait before departing
+        marker: (() => {
+            const marker = L.marker(
+            [startPt.lat, startPt.lng],
+            { icon, zIndexOffset: 500 }
+            ).bindTooltip(
+            `${r.name} · ${svcType.toUpperCase()}`,
+            { permanent:false, direction:'top' }
+            );
+
+        if (delayTicks === 0) {
+            marker.addTo(map);
+        }
+
+        return marker;
+        })(),
+        };
+      state.simBuses.push(bus);
+    });
+  });
+
   state.simInterval = setInterval(() => {
-    // Meters to travel this tick, scaled by speed slider
     const metersPerTick = state.speedMult * 0.275;
     state.simBuses.forEach(bus => {
+      // Count down pre-departure delay — bus sits at first stop until released
+      if (bus.delayRemaining > 0) {
+          bus.delayRemaining--;
+          // 1 second before departure
+          if (
+            !bus.visible &&
+            bus.delayRemaining <= 20
+          ) {
+            bus.visible = true;
+            bus.marker.addTo(map);
+            const el = bus.marker.getElement();
+        
+            if (el) {
+              el.style.opacity = '0';
+              el.style.transition = 'opacity 1s ease';
+        
+              requestAnimationFrame(() => {
+                el.style.opacity = '1';
+              });
+            }
+            bus.fadedIn = true;
+          }
+          return;
+        }
+      // Dwell at a stop
+      if (bus.dwellRemaining > 0) {
+        bus.dwellRemaining -= TICK;
+        return;
+      }
       let remaining = metersPerTick;
-      // Advance through segments until we've consumed the distance budget
       while (remaining > 0) {
         const segDist = bus.segDistances[bus.segIdx] || 1;
         const remainingInSeg = (1 - bus.t) * segDist;
@@ -1581,6 +1789,11 @@ function startSim() {
           remaining -= remainingInSeg;
           bus.segIdx = (bus.segIdx + 1) % (bus.loopLen - 1);
           bus.t = 0;
+          const arrivedAt = bus.loop[bus.segIdx];
+          if (arrivedAt && !arrivedAt.isWaypoint) {
+            bus.dwellRemaining = DWELL_MS;
+            remaining = 0;
+          }
         }
       }
       const a = bus.loop[bus.segIdx];
@@ -1592,7 +1805,7 @@ function startSim() {
     });
   }, TICK);
 
-  setStatus('▶ Simulation running — A→B→A loop with waypoints!');
+  setStatus('▶ Simulation running — buses depart from Side A start with even headways!');
 }
 
 // Build a seamless A→B→A loop point sequence
@@ -1627,6 +1840,12 @@ function stopSim() {
   document.getElementById('sim-btn').classList.remove('running');
   state.simBuses.forEach(b => { if (b.marker) map.removeLayer(b.marker); });
   state.simBuses = [];
+  state.routes.forEach(r => {
+    r.fleetList = [];
+    r.fleetIdCounter = 0;
+  });
+  renderRouteList();
+
   setStatus('■ Simulation stopped.');
 }
 
@@ -1649,6 +1868,9 @@ function saveToFile() {
     })),
     routes: state.routes.map(r => ({
       id: r.id, name: r.name, type: r.type, color: r.color, buses: r.buses,
+    fleetList: r.fleetList && r.fleetList.length ? r.fleetList : Array.from({length: r.buses||1},(_,i)=>({id:i+1,serviceType:r.type})),
+    fleetIdCounter: r.fleetIdCounter || (r.buses || 1),
+      fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 1,
       sideA: r.sideA, sideB: r.sideB, activeSide: r.activeSide,
     })),
   };
