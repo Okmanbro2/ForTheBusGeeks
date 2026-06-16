@@ -9,3 +9,16 @@ Ever wanted to make your own bus routes in any city you want? Felt like MetroDre
 
 # Jump in
 You can play it here: https://okmanbro2.github.io/ForTheBusGeeks/
+
+# Miscellaneous
+<details>
+  <summary>Changelog</summary>
+</details>
+<details>
+  <summary>Todo List</summary>
+  <li>Test</li>
+  <li>Test</li>
+  <li>Test</li>
+  <li>Test</li>
+</details>
+
