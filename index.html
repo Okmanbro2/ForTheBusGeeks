@@ -1276,35 +1276,67 @@ function buildRouteBody(r) {
   const eligible = state.stops.filter(s => s.isWaypoint || s.types.includes(r.type));
   const searchTerm = (window._routeSearch?.[r.id] || '').toLowerCase().trim();
 
-  const seqHTML = arr.length
-    ? arr.map((sid, i) => {
-        const s = state.stops.find(x => x.id === sid);
-        if (!s) return '';
-        // If this item is being edited
-        if (editingSeqItem &&
-            editingSeqItem.routeId === r.id &&
-            editingSeqItem.side === side &&
-            editingSeqItem.stopId === sid) {
-          return `
-            <div class="seq-edit-row">
-              <div style="font-size:10px;color:var(--muted);margin-bottom:2px;">Editing: ${s.name}</div>
-              <input type="text" id="seq-edit-name-${sid}" value="${s.name}" placeholder="Stop name" />
-              <div class="seq-edit-btns">
-                <button class="btn btn-accent" onclick="saveSeqEdit(${r.id},${sid})">Save</button>
-                <button class="btn btn-muted" onclick="closeSeqEdit(${r.id})">Cancel</button>
-              </div>
-            </div>`;
-        }
-        const wpBadge = s.isWaypoint
-          ? `<span class="seq-type-badge waypoint">WP</span>`
-          : `<span class="seq-type-badge">${s.types[0].toUpperCase()}</span>`;
-        return `<div class="seq-item" onclick="openSeqEdit(${r.id},'${side}',${sid})">
-          <span class="seq-num">${i+1}</span>
-          <span class="seq-name" style="${s.isWaypoint?'color:#c4b5fd;':''}">${s.isWaypoint?'◆ ':''}${s.name}</span>
-          ${wpBadge}
-          <button class="seq-remove" onclick="event.stopPropagation();removeStopFromSide(${r.id},'${side}',${sid})">✕</button>
-        </div>`;
-      }).join('')
+  // Build a single seq item row
+  function buildSeqItem(s, i, sid) {
+    if (editingSeqItem &&
+        editingSeqItem.routeId === r.id &&
+        editingSeqItem.side === side &&
+        editingSeqItem.stopId === sid) {
+      return `<div class="seq-edit-row">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:2px;">Editing: ${s.name}</div>
+        <input type="text" id="seq-edit-name-${sid}" value="${s.name}" placeholder="Stop name" />
+        <div class="seq-edit-btns">
+          <button class="btn btn-accent" onclick="saveSeqEdit(${r.id},${sid})">Save</button>
+          <button class="btn btn-muted" onclick="closeSeqEdit(${r.id})">Cancel</button>
+        </div>
+      </div>`;
+    }
+    const wpBadge = s.isWaypoint
+      ? `<span class="seq-type-badge waypoint">WP</span>`
+      : `<span class="seq-type-badge">${s.types[0].toUpperCase()}</span>`;
+    return `<div class="seq-item" onclick="openSeqEdit(${r.id},'${side}',${sid})">
+      <span class="seq-num">${i+1}</span>
+      <span class="seq-name" style="${s.isWaypoint?'color:#c4b5fd;':''}">${s.isWaypoint?'◆ ':''}${s.name}</span>
+      ${wpBadge}
+      <button class="seq-remove" onclick="event.stopPropagation();removeStopFromSide(${r.id},'${side}',${sid})">✕</button>
+    </div>`;
+  }
+
+  // Separate stops and waypoints, preserve original ordering index
+  const resolvedArr = arr.map((sid, i) => ({ sid, i, s: state.stops.find(x => x.id === sid) })).filter(x => x.s);
+  const stopEntries = resolvedArr.filter(x => !x.s.isWaypoint);
+  const wpEntries   = resolvedArr.filter(x => x.s.isWaypoint);
+
+  // Per-route, per-side collapse state; stops open by default, waypoints collapsed
+  if (!window._seqCollapsed) window._seqCollapsed = {};
+  if (!window._depotCollapsed) window._depotCollapsed = {};
+  const colKeyStops = `${r.id}-${side}-stops`;
+  const colKeyWps   = `${r.id}-${side}-wps`;
+  if (window._seqCollapsed[colKeyStops] === undefined) window._seqCollapsed[colKeyStops] = false;
+  if (window._seqCollapsed[colKeyWps]   === undefined) window._seqCollapsed[colKeyWps]   = true;
+  const stopsOpen = !window._seqCollapsed[colKeyStops];
+  const wpsOpen   = !window._seqCollapsed[colKeyWps];
+
+  function collapsibleGroup(label, entries, colKey, isOpen) {
+    const arrow = isOpen ? '▾' : '▸';
+    const rows  = isOpen ? entries.map(({s, i, sid}) => buildSeqItem(s, i, sid)).join('') : '';
+    const empty = isOpen && !entries.length
+      ? '<div style="font-size:11px;color:var(--muted);padding:2px 4px 4px;">None in sequence.</div>' : '';
+    return `<div style="margin-bottom:4px;">
+      <div onclick="toggleSeqGroup('${colKey}',${r.id},'${side}')"
+        style="display:flex;align-items:center;gap:5px;padding:4px 6px;border-radius:4px;
+               cursor:pointer;font-size:11px;font-weight:700;color:var(--muted);
+               border:1px solid var(--border);background:var(--surface);margin-bottom:3px;user-select:none;">
+        <span>${arrow}</span><span>${label}</span>
+        <span style="margin-left:auto;font-size:10px;font-weight:400;">${entries.length}</span>
+      </div>
+      ${rows}${empty}
+    </div>`;
+  }
+
+  const seqHTML = resolvedArr.length
+    ? collapsibleGroup('Bus Stops', stopEntries, colKeyStops, stopsOpen)
+      + collapsibleGroup('Waypoints', wpEntries, colKeyWps, wpsOpen)
     : '<div style="font-size:11px;color:var(--muted);padding:4px 0;">No stops added yet.</div>';
 
   const filteredEligible = eligible.filter(s =>
@@ -1480,6 +1512,18 @@ function setBusServiceType(routeId, busId, type) {
 // ════════════════════════════════════════════
 //  CLICK-TO-ADD STOP TO ROUTE SIDE
 // ════════════════════════════════════════════
+function toggleDepotSection(key) {
+  if (!window._depotCollapsed) window._depotCollapsed = {};
+  window._depotCollapsed[key] = !window._depotCollapsed[key];
+  renderRouteList();
+}
+
+function toggleSeqGroup(colKey, routeId, side) {
+  if (!window._seqCollapsed) window._seqCollapsed = {};
+  window._seqCollapsed[colKey] = !window._seqCollapsed[colKey];
+  rerenderRouteBody(routeId);
+}
+
 function quickAddToSide(routeId, stopId) {
   const r = state.routes.find(x => x.id === routeId);
   if (!r) return;
@@ -1792,7 +1836,11 @@ function renderRouteList() {
         <div class="route-badge" style="background:${r.color};">${r.name}</div>
         <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
         <span class="route-name" title="${fullName}">${fullName}</span>
-        <span style="font-size:10px;color:var(--muted);">${(r.fleetList||[]).length} bus${(r.fleetList||[]).length===1?'':'es'}</span>
+        <span style="font-size:10px;color:var(--muted);">${(() => {
+          const live = state.simRunning ? state.simBuses.filter(b => b.routeId === r.id).length : null;
+          const n = live !== null ? live : (r.fleetList||[]).length;
+          return n + ' bus' + (n === 1 ? '' : 'es') + (live !== null ? ' 🟢' : '');
+        })()}</span>
         <button class="icon-btn" onclick="event.stopPropagation();openEditRouteForm(${r.id})" title="Edit route info">✏️</button>
         <span class="route-expand">▾</span>
       </div>
@@ -1810,30 +1858,37 @@ function renderRouteList() {
 
   let html = '';
 
+  if (!window._depotCollapsed) window._depotCollapsed = {};
+
+  function renderDepotSection(key, icon, title, routes) {
+    const isOpen = window._depotCollapsed[key] !== true;
+    const arrow = isOpen ? '▾' : '▸';
+    const body = isOpen ? `<div class="depot-routes">
+      ${routes.length
+        ? routes.map(renderRouteCard).join('')
+        : '<div style="font-size:11px;color:var(--muted);padding:0 2px;">No routes assigned.</div>'}
+    </div>` : '';
+    return `<div class="depot-section">
+      <div class="depot-header" onclick="toggleDepotSection('${key}')" style="cursor:pointer;user-select:none;">
+        <span style="font-size:11px;color:var(--muted);margin-right:4px;">${arrow}</span>
+        <span class="depot-title">${icon} ${title}</span>
+        <span class="depot-count">${routes.length} route${routes.length===1?'':'s'}</span>
+      </div>
+      ${body}
+    </div>`;
+  }
+
   grouped.forEach(({ depot, routes }) => {
-    html += `
-      <div class="depot-section">
-        <div class="depot-header">
-          <span class="depot-title">🏢 ${depot.name}</span>
-          <span class="depot-count">${routes.length} route${routes.length===1?'':'s'}</span>
-        </div>
-        <div class="depot-routes">
-          ${routes.length ? routes.map(renderRouteCard).join('') : '<div style="font-size:11px;color:var(--muted);padding:0 2px;">No routes assigned. Use a route\'s ✏️ edit button to assign it here.</div>'}
-        </div>
-      </div>`;
+    html += renderDepotSection('depot-'+depot.id, '🏢', depot.name, routes);
   });
 
   if (unassigned.length || !state.depots.length) {
-    html += `
-      <div class="depot-section">
-        <div class="depot-header">
-          <span class="depot-title">${state.depots.length ? '📭 Unassigned' : '🚌 All Routes'}</span>
-          <span class="depot-count">${unassigned.length} route${unassigned.length===1?'':'s'}</span>
-        </div>
-        <div class="depot-routes">
-          ${unassigned.map(renderRouteCard).join('')}
-        </div>
-      </div>`;
+    html += renderDepotSection(
+      'depot-unassigned',
+      state.depots.length ? '📭' : '🚌',
+      state.depots.length ? 'Unassigned' : 'All Routes',
+      unassigned
+    );
   }
 
   el.innerHTML = html;
@@ -2136,16 +2191,17 @@ function startSim() {
 
   state.routes.forEach(r => {
 
-    // First simulation start: create fleet entries from bus count.
-    if ((!r.fleetList || !r.fleetList.length) && (r.buses || 0) > 0) {
-      r.fleetList = Array.from({length: r.buses}, (_, i) => ({
+    // Guarantee every route gets at least 1 bus — migrate old saves and cover new empty fleets
+    if (!r.fleetList || !r.fleetList.length) {
+      const count = (r.buses && r.buses > 0) ? r.buses : 1;
+      r.fleetList = Array.from({length: count}, (_, i) => ({
         id: i + 1,
-        serviceType: r.type
+        serviceType: r.type,
       }));
-      r.fleetIdCounter = r.buses;
+      r.fleetIdCounter = count;
     }
 
-    const fleet = r.fleetList || [];
+    const fleet = r.fleetList;
     const totalBuses = fleet.length;
 
     if (!totalBuses) return;
