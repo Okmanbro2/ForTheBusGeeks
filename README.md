@@ -19,7 +19,5 @@ You can play it here: https://okmanbro2.github.io/ForTheBusGeeks/
 <details>
   <summary>Todo List</summary>
   <li>More stats (Ridership, cost, etc.)</li>
-  <li>Simpler UI</li>
-  <li>Respective depots (e.g., seperate categories for your routes)</li>
 </details>
 
