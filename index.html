@@ -38,58 +38,83 @@
     overflow: hidden;
   }
 
-  /* ── Top Bar ── */
+  /* ── Top Bar — single row, horizontally scrollable if needed ── */
   #topbar {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 0 16px;
-    height: 52px;
+    gap: 8px;
+    padding: 0 14px;
+    height: 46px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     z-index: 1000;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  #topbar::-webkit-scrollbar { display: none; }
+  /* Placeholder rows no longer exist — keep refs harmless */
+  #topbar-row1, #topbar-row2 { display: contents; }
 
   #topbar h1 {
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 14px;
+    font-weight: 800;
     letter-spacing: 0.04em;
     color: var(--accent);
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .tool-group {
     display: flex;
-    gap: 6px;
-    margin-left: 8px;
+    gap: 5px;
+    flex-shrink: 0;
   }
 
   .tool-btn {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 12px;
+    gap: 5px;
+    padding: 4px 10px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: var(--bg);
     color: var(--muted);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s;
     white-space: nowrap;
+    flex-shrink: 0;
   }
   .tool-btn:hover { border-color: var(--accent); color: var(--text); }
   .tool-btn.active { background: var(--accent); color: #000; border-color: var(--accent); }
   .tool-btn.active-wp { background: #8b5cf6; color: #fff; border-color: #8b5cf6; }
+  .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .tool-btn:disabled:hover { border-color: var(--border); color: var(--muted); }
 
-  .sep { width: 1px; background: var(--border); height: 28px; margin: 0 4px; }
+  .sep { width: 1px; background: var(--border); height: 22px; margin: 0 2px; flex-shrink: 0; }
 
-  #sim-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  /* ── Floating Sim HUD — overlays the map, steals zero layout height ── */
+  #sim-hud {
+    position: absolute;
+    top: 56px;          /* just below the topbar */
+    right: 330px;       /* clear of the side panel (320px + 10px gap) */
+    z-index: 800;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(26,29,39,0.92);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 12px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    pointer-events: all;
+  }
 
   #sim-btn {
-    padding: 5px 14px;
+    padding: 4px 14px;
     border-radius: 6px;
     border: none;
     background: var(--local);
@@ -98,17 +123,21 @@
     font-weight: 700;
     cursor: pointer;
     transition: background 0.15s;
+    white-space: nowrap;
   }
   #sim-btn.running { background: var(--danger); color: #fff; }
 
-  #speed-label { font-size: 11px; color: var(--muted); }
+  #speed-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
   #speed-range { width: 80px; accent-color: var(--accent); }
+  /* Keep old #sim-controls ref harmless */
+  #sim-controls { display: contents; }
 
   /* ── Main Layout ── */
   #main {
     display: flex;
     flex: 1;
     overflow: hidden;
+    position: relative;
   }
 
   /* ── Map ── */
@@ -413,45 +442,131 @@
     border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    display: none; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; width: 340px;
+    max-height: 85vh; overflow-y: auto;
+  }
+  .modal-box h2 { font-size: 14px; margin: 0 0 4px; }
+  .modal-box .modal-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .modal-field { margin-bottom: 10px; }
+  .modal-field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .modal-field input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 5px; color: var(--text); font-size: 12px; padding: 5px 8px;
+    box-sizing: border-box;
+  }
+  .modal-actions { display: flex; gap: 8px; margin-top: 14px; }
+
 </style>
 </head>
 <body>
 
 <!-- ══ TOP BAR ══ -->
 <div id="topbar">
-  <h1 style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px;" title="FOR THE BUS GEEKS - The Game I've Always Ever Wanted">BUS GEEK 1.0</h1>
-
+  <h1 title="FOR THE BUS GEEKS">BUS GEEK 1.0</h1>
   <div class="sep"></div>
-
   <div class="tool-group">
-    <button class="tool-btn" id="btn-pan"       onclick="setTool('pan')">✋ Pan</button>
-    <button class="tool-btn" id="btn-stop"       onclick="setTool('stop')">🔵 Add Stop</button>
-    <button class="tool-btn" id="btn-waypoint"   onclick="setTool('waypoint')">◆ Add Waypoint</button>
-    <button class="tool-btn" id="btn-route"      onclick="setTool('route')">➕ New Route</button>
-    <button class="tool-btn" id="btn-toggle-wp"  onclick="toggleWaypointVisibility()">👁‍🗨 Waypoints</button>
-    <button class="tool-btn" id="btn-toggle-stops" onclick="toggleStopVisibility()">🔵‍🗨 Stops</button>
+    <button class="tool-btn" id="btn-pan"         onclick="setTool('pan')">✋ Pan</button>
+    <button class="tool-btn" id="btn-stop"         onclick="setTool('stop')">🔵 Add Stop</button>
+    <button class="tool-btn" id="btn-waypoint"     onclick="setTool('waypoint')">◆ Add Waypoint</button>
+    <button class="tool-btn" id="btn-route"        onclick="setTool('route')">➕ New Route</button>
+    <button class="tool-btn" id="btn-draw"         onclick="setTool('draw')">✏️ Draw Route</button>
+    <button class="tool-btn" id="btn-toggle-wp"    onclick="toggleWaypointVisibility()">👁 Waypoints</button>
+    <button class="tool-btn" id="btn-toggle-stops" onclick="toggleStopVisibility()">🔵 Stops</button>
   </div>
-
   <div class="sep"></div>
-
+  <div class="tool-group">
+    <button class="tool-btn" id="btn-undo" onclick="performUndo()" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+    <button class="tool-btn" id="btn-redo" onclick="performRedo()" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+  </div>
+  <div class="sep"></div>
   <div class="tool-group">
     <button class="tool-btn" id="btn-save" onclick="saveToFile()">💾 Save</button>
     <button class="tool-btn" id="btn-load" onclick="document.getElementById('load-file-input').click()">📂 Load</button>
     <input type="file" id="load-file-input" accept="application/json" style="display:none;" onchange="loadFromFile(event)" />
   </div>
-
   <div class="sep"></div>
+  <div class="tool-group">
+    <button class="tool-btn" id="btn-cost-settings" onclick="openCostSettings()">⚙️ Cost Settings</button>
+  </div>
+</div>
 
-  <div id="sim-controls">
-    <span id="speed-label">Speed</span>
-    <input type="range" id="speed-range" min="1" max="10" value="5" oninput="updateSpeed(this.value)" />
-    <button id="sim-btn" onclick="toggleSim()">▶ Start Simulation</button>
+<!-- ══ FLOATING SIM HUD ══ -->
+<div id="sim-hud">
+  <span id="speed-label">Speed</span>
+  <input type="range" id="speed-range" min="1" max="10" value="5" oninput="updateSpeed(this.value)" />
+  <button id="sim-btn" onclick="toggleSim()">▶ Start Simulation</button>
+</div>
+
+<!-- ══ COST SETTINGS MODAL ══ -->
+<div class="modal-overlay" id="cost-settings-modal">
+  <div class="modal-box">
+    <h2>⚙️ Cost &amp; Ridership Settings</h2>
+    <div class="modal-sub">Editable estimates used to compute the stats shown when hovering a route line. Defaults are derived from real MTA/NYCT data — adjust to match your scenario.</div>
+
+    <div style="font-size:10px;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 10px;margin-bottom:10px;line-height:1.6;">
+      <strong style="color:var(--text);">📊 Data sources (MTA 2024)</strong><br>
+      NYCT bus: ~1.29M weekday boardings / ~300 routes → ~4,300/route/day system avg.<br>
+      That avg is dragged down by low-ridership outer-borough routes. Dense Bronx/Brooklyn/Queens locals (e.g. Bx39 White Plains Rd ~10K/day, ~80 stops) work out to <strong style="color:var(--accent);">~7–8/stop/hr</strong> — hence the default of 8.<br>
+      High-ridership SBS (Bx41 ~22K/day, Bx12 ~25K/day): fewer stops, so ~15–25/stop/hr.<br>
+      Operating cost: MTA ~$250/bus-revenue-hr; ~$30/vehicle-mile (highest per-mile cost of any US city bus system).<br>
+      Speed: NYC local avg 7–9 mph incl. stops &amp; traffic; SBS ~10–12 mph.
+    </div>
+
+    <div class="modal-field">
+      <label>Cost per revenue hour ($/hr) · <span style="color:var(--accent);">MTA avg ~$250</span></label>
+      <input type="number" id="cs-costPerRevenueHour" step="1" />
+    </div>
+    <div class="modal-field">
+      <label>Cost per vehicle mile ($/mi) · <span style="color:var(--accent);">MTA avg ~$30</span></label>
+      <input type="number" id="cs-costPerVehicleMile" step="0.1" />
+    </div>
+    <div class="modal-field">
+      <label>Average bus speed (mph) · <span style="color:var(--accent);">NYC local ~9 mph, SBS ~11 mph</span></label>
+      <input type="number" id="cs-avgSpeedMph" step="0.5" />
+    </div>
+    <div class="modal-field">
+      <label>Stop install cost ($/stop, one-time) · <span style="color:var(--accent);">~$4,570 basic amenities</span></label>
+      <input type="number" id="cs-stopInstallCost" step="10" />
+    </div>
+    <div class="modal-field">
+      <label>Boardings per stop per service hour · <span style="color:var(--accent);">dense NYC local ~8 (system avg ~6)</span></label>
+      <input type="number" id="cs-boardingsPerStopPerHour" step="0.5" />
+      <div style="font-size:10px;color:var(--muted);margin-top:2px;">Low-traffic outer-borough local ~3–5 · Dense Bronx/Bklyn/Queens local ~7–10 · High-ridership SBS corridor ~15–25</div>
+    </div>
+    <div class="modal-field">
+      <label>Daily service span (hours) · <span style="color:var(--accent);">NYC local ~18 hrs (5am–11pm)</span></label>
+      <input type="number" id="cs-serviceHoursPerDay" step="0.5" />
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-muted" style="flex:1;" onclick="resetCostSettingsToDefaults()">Reset Defaults</button>
+      <button class="btn btn-accent" style="flex:1;" onclick="saveCostSettings()">Save</button>
+    </div>
+    <button class="btn btn-muted btn-full" style="margin-top:8px;" onclick="closeCostSettings()">Close</button>
   </div>
 </div>
 
 <!-- ══ MAIN ══ -->
 <div id="main">
   <div id="map"></div>
+
+  <div id="draw-controls" style="display:none;position:absolute;bottom:24px;left:50%;transform:translateX(-50%);
+       z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:8px;
+       padding:8px 12px;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,0.5);">
+    <span style="font-size:12px;color:var(--text);">✏️ Drawing route — <span id="draw-point-count">0</span> point(s)</span>
+    <span style="font-size:11px;color:var(--muted);">Click empty map to add a point. Click a placed point to make it a stop. Double-click empty map to finish.</span>
+    <button class="btn btn-accent" style="font-size:11px;padding:4px 10px;" onclick="finishDrawing()">✓ Finish</button>
+    <button class="btn btn-danger" style="font-size:11px;padding:4px 10px;" onclick="cancelDrawing()">✕ Cancel</button>
+  </div>
 
   <!-- ══ SIDE PANEL ══ -->
   <div id="panel">
@@ -554,7 +669,98 @@ const state = {
   routeIdCounter: 0,
   waypointsVisible: false,
   stopsVisible: false, // global stop-marker visibility (separate from waypoints toggle)
+
+  // Editable cost/ridership assumptions (defaults from researched NYCT figures —
+  // these vary by agency/year and are meant to be tuned, not treated as exact).
+  costSettings: {
+    costPerRevenueHour: 250,   // operating $ per bus-hour in service ($245–$262 cited range, midpoint-ish)
+    costPerVehicleMile: 30.40, // operating $ per bus-mile
+    avgSpeedMph: 9,            // assumed average road speed incl. stops/traffic, for estimating runtime from distance
+    stopInstallCost: 4570,     // one-time infrastructure $ per stop (basic seating/leaning bar program)
+    boardingsPerStopPerHour: 8, // Bronx/Brooklyn/Queens dense-corridor local avg (MTA 2024 data)
+    serviceHoursPerDay: 16,     // assumed daily service span, for daily ridership/cost estimates
+  },
 };
+
+// ════════════════════════════════════════════
+//  UNDO / REDO (stop & waypoint placement, deletion, and moves only)
+//  Command pattern: each entry knows how to undo itself and how to redo
+//  itself. Kept intentionally scoped to stop/waypoint placement edits —
+//  route sequence edits, depot changes, etc. are NOT tracked here.
+// ════════════════════════════════════════════
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 100;
+
+function pushUndo(command) {
+  undoStack.push(command);
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+  redoStack.length = 0; // any new action invalidates the redo chain
+  updateUndoRedoButtons();
+}
+
+function performUndo() {
+  const cmd = undoStack.pop();
+  if (!cmd) return;
+  cmd.undo();
+  redoStack.push(cmd);
+  updateUndoRedoButtons();
+}
+
+function performRedo() {
+  const cmd = redoStack.pop();
+  if (!cmd) return;
+  cmd.redo();
+  undoStack.push(cmd);
+  updateUndoRedoButtons();
+}
+
+function updateUndoRedoButtons() {
+  const u = document.getElementById('btn-undo');
+  const r = document.getElementById('btn-redo');
+  if (u) u.disabled = undoStack.length === 0;
+  if (r) r.disabled = redoStack.length === 0;
+}
+
+document.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return; // don't hijack typing
+  const meta = e.ctrlKey || e.metaKey;
+  if (!meta) return;
+  if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); performUndo(); }
+  else if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); performRedo(); }
+});
+
+// Re-creates a stop/waypoint marker + data object from a plain snapshot
+// (used by undo-delete and redo-place)
+function restoreStopFromSnapshot(snap) {
+  const stop = { ...snap, marker: null };
+  createStopMarker(stop);
+  state.stops.push(stop);
+  return stop;
+}
+
+function snapshotStop(stop) {
+  return {
+    id: stop.id, name: stop.name, lat: stop.lat, lng: stop.lng,
+    types: [...stop.types], isWaypoint: !!stop.isWaypoint,
+  };
+}
+
+function removeStopById(id, { stripFromRoutes = true } = {}) {
+  const idx = state.stops.findIndex(s => s.id === id);
+  if (idx === -1) return null;
+  const stop = state.stops[idx];
+  if (stop.marker) map.removeLayer(stop.marker);
+  state.stops.splice(idx, 1);
+  if (stripFromRoutes) {
+    state.routes.forEach(r => {
+      r.sideA = r.sideA.filter(sid => sid !== id);
+      r.sideB = r.sideB.filter(sid => sid !== id);
+    });
+  }
+  return stop;
+}
 
 // Builds the full descriptive route name from structured fields, e.g.
 // "Bx15 Fordham Plaza/Hub 149 St via 3 Av, 149 St"
@@ -604,6 +810,11 @@ map.on('zoomend', () => redrawRouteLines());
 //  TOOL MANAGEMENT
 // ════════════════════════════════════════════
 function setTool(t) {
+  // Leaving draw mode via switching tools should cancel any in-progress drawing
+  if (state.tool === 'draw' && t !== 'draw' && window._drawState && window._drawState.active) {
+    cancelDrawing();
+  }
+
   state.tool = t;
   document.querySelectorAll('.tool-btn').forEach(b => {
     b.classList.remove('active');
@@ -616,10 +827,18 @@ function setTool(t) {
   }
   const mapEl = document.getElementById('map');
   mapEl.className = t === 'pan' ? 'pan-mode' : '';
+
+  if (t === 'draw') {
+    startDrawing();
+  } else {
+    document.getElementById('draw-controls').style.display = 'none';
+  }
+
   setStatus(
     t === 'stop'     ? '🔵 Click the map to place a stop' :
     t === 'waypoint' ? '◆ Click the map to place a waypoint (guides the path, no passenger boarding)' :
     t === 'route'    ? '➕ Open Routes tab and create a route' :
+    t === 'draw'     ? '✏️ Click to draw points. Click a placed point to make it a stop.' :
     '✋ Pan mode – drag to move map'
   );
 }
@@ -672,7 +891,284 @@ function onMapClick(e) {
     openStopPopup(e.latlng, false);
   } else if (state.tool === 'waypoint') {
     openStopPopup(e.latlng, true);
+  } else if (state.tool === 'draw') {
+    handleDrawClick(e.latlng);
   }
+}
+
+// ════════════════════════════════════════════
+//  DRAW ROUTE TOOL
+//  Click to lay down points along a path (each a pending waypoint).
+//  Double-click an already-placed point to promote it to a real stop
+//  (reuses the same config UI as the normal Add Stop flow). Double-click
+//  empty map space, or the Finish button, ends the drawing and commits
+//  every point as a real stop/waypoint, appended in order to whichever
+//  route is currently open (or just the global stop list if none is open).
+// ════════════════════════════════════════════
+window._drawState = null;
+
+function startDrawing() {
+  window._drawState = {
+    active: true,
+    points: [], // { tempId, latlng, isStop, name, types }
+    previewLine: null,
+    pointMarkers: [], // small circle markers for placed points, clickable to promote
+  };
+  window._drawState.previewLine = L.polyline([], {
+    color: '#f5a623', weight: 3, dashArray: '4,6', opacity: 0.9,
+  }).addTo(map);
+
+  document.getElementById('draw-controls').style.display = 'flex';
+  updateDrawPointCount();
+
+  // Disable double-click-zoom while drawing, since double-click is repurposed
+  // to promote a point to a stop / finish the drawing.
+  map.doubleClickZoom.disable();
+}
+
+function updateDrawPointCount() {
+  const el = document.getElementById('draw-point-count');
+  if (el && window._drawState) el.textContent = window._drawState.points.length;
+}
+
+function handleDrawClick(latlng) {
+  const ds = window._drawState;
+  if (!ds || !ds.active) return;
+
+  const tempId = ds.points.length + 1;
+  const point = { tempId, latlng, isStop: false, name: `WP${tempId}`, types: ['local','limited','sbs'] };
+  ds.points.push(point);
+
+  const marker = L.circleMarker(latlng, {
+    radius: 5, color: '#fff', weight: 2, fillColor: '#f5a623', fillOpacity: 1,
+  }).addTo(map);
+  marker.on('click', (e) => {
+    L.DomEvent.stopPropagation(e);
+    openPromoteToStopPopup(tempId);
+  });
+  ds.pointMarkers.push(marker);
+
+  ds.previewLine.setLatLngs(ds.points.map(p => p.latlng));
+  updateDrawPointCount();
+}
+
+// Double-clicking empty map space while drawing finishes it (matches the
+// L.Draw convention of double-click-to-end a polyline).
+map.on('dblclick', (e) => {
+  if (window._drawState && window._drawState.active) {
+    finishDrawing();
+  }
+});
+
+function openPromoteToStopPopup(tempId) {
+  const ds = window._drawState;
+  if (!ds) return;
+  const point = ds.points.find(p => p.tempId === tempId);
+  if (!point) return;
+
+  const typesChecked = (t) => point.isStop && point.types.includes(t)
+    ? `style="opacity:1;background:${t==='sbs'?'#3b82f6':t==='limited'?'#f59e0b':'#22c55e'};color:${t==='sbs'?'#fff':'#000'};"`
+    : `style="opacity:0.45;"`;
+
+  const html = `
+    <div style="min-width:190px;">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px;">${point.isStop ? '🔵 Stop' : '◆ Waypoint'} #${tempId}</div>
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:3px;">Name</div>
+      <input id="dp-name-${tempId}" type="text" value="${point.isStop ? point.name : ''}" placeholder="e.g. 1st Av/1st St"
+        style="width:100%;background:#0f1117;border:1px solid #2c2f3f;border-radius:5px;
+               color:#e8eaf0;font-size:12px;padding:5px 8px;margin-bottom:8px;outline:none;" />
+      <div style="font-size:11px;color:#9ca3af;margin-bottom:5px;">Make this a real stop (service types)</div>
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <div id="dp-local-${tempId}" onclick="toggleDrawPromoteChip(${tempId},'local')"
+          class="chip local" ${typesChecked('local')}
+          style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #22c55e;cursor:pointer;">Local</div>
+        <div id="dp-limited-${tempId}" onclick="toggleDrawPromoteChip(${tempId},'limited')"
+          class="chip limited" ${typesChecked('limited')}
+          style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #f59e0b;cursor:pointer;">Limited</div>
+        <div id="dp-sbs-${tempId}" onclick="toggleDrawPromoteChip(${tempId},'sbs')"
+          class="chip sbs" ${typesChecked('sbs')}
+          style="padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #3b82f6;cursor:pointer;">SBS</div>
+      </div>
+      <div style="font-size:10px;color:#6b7280;margin-bottom:8px;">No service types selected = stays a waypoint.</div>
+      <div style="display:flex;gap:6px;">
+        <button onclick="saveDrawPromotion(${tempId})"
+          style="flex:1;background:#f5a623;color:#000;border:none;border-radius:6px;
+                 padding:6px;font-size:12px;font-weight:700;cursor:pointer;">Save</button>
+        <button onclick="removeDrawPoint(${tempId})"
+          style="flex:1;background:#ef4444;color:#fff;border:none;border-radius:6px;
+                 padding:6px;font-size:12px;font-weight:700;cursor:pointer;">Remove Point</button>
+      </div>
+    </div>`;
+
+  window._drawPromoteChips = window._drawPromoteChips || {};
+  ['local','limited','sbs'].forEach(t => {
+    window._drawPromoteChips[`${tempId}-${t}`] = point.isStop && point.types.includes(t);
+  });
+
+  L.popup({ closeOnClick: false, autoClose: false })
+    .setLatLng(point.latlng)
+    .setContent(html)
+    .openOn(map);
+}
+
+function toggleDrawPromoteChip(tempId, type) {
+  const key = `${tempId}-${type}`;
+  const el = document.getElementById(`dp-${type}-${tempId}`);
+  if (!el) return;
+  const on = !window._drawPromoteChips[key];
+  window._drawPromoteChips[key] = on;
+  el.style.opacity = on ? '1' : '0.45';
+  const bg = type === 'local' ? '#22c55e' : type === 'limited' ? '#f59e0b' : '#3b82f6';
+  el.style.background = on ? bg : 'transparent';
+  el.style.color = on ? (type === 'sbs' ? '#fff' : '#000') : bg;
+}
+
+function saveDrawPromotion(tempId) {
+  const ds = window._drawState;
+  if (!ds) return;
+  const point = ds.points.find(p => p.tempId === tempId);
+  if (!point) return;
+
+  const nameEl = document.getElementById(`dp-name-${tempId}`);
+  const name = nameEl ? nameEl.value.trim() : '';
+  const types = ['local','limited','sbs'].filter(t => window._drawPromoteChips[`${tempId}-${t}`]);
+
+  if (types.length) {
+    if (!name) { alert('Please enter a name for this stop.'); return; }
+    point.isStop = true;
+    point.name = name;
+    point.types = types;
+  } else {
+    point.isStop = false;
+    point.name = name || `WP${tempId}`;
+    point.types = ['local','limited','sbs'];
+  }
+
+  // Reflect the promotion visually on the placed-point marker
+  const marker = ds.pointMarkers[ds.points.indexOf(point)];
+  if (marker) {
+    marker.setStyle(point.isStop
+      ? { fillColor: typeColor(point.types[0]), radius: 6 }
+      : { fillColor: '#f5a623', radius: 5 });
+  }
+
+  map.closePopup();
+  updateDrawPointCount();
+}
+
+function removeDrawPoint(tempId) {
+  const ds = window._drawState;
+  if (!ds) return;
+  const idx = ds.points.findIndex(p => p.tempId === tempId);
+  if (idx === -1) return;
+  const marker = ds.pointMarkers[idx];
+  if (marker) map.removeLayer(marker);
+  ds.points.splice(idx, 1);
+  ds.pointMarkers.splice(idx, 1);
+  ds.previewLine.setLatLngs(ds.points.map(p => p.latlng));
+  map.closePopup();
+  updateDrawPointCount();
+}
+
+function cancelDrawing() {
+  const ds = window._drawState;
+  if (!ds) return;
+  if (ds.previewLine) map.removeLayer(ds.previewLine);
+  ds.pointMarkers.forEach(m => map.removeLayer(m));
+  map.closePopup();
+  map.doubleClickZoom.enable();
+  document.getElementById('draw-controls').style.display = 'none';
+  window._drawState = null;
+}
+
+function finishDrawing() {
+  const ds = window._drawState;
+  if (!ds || !ds.active) return;
+
+  if (ds.points.length < 1) { cancelDrawing(); return; }
+
+  // Commit every drawn point as a real stop/waypoint in state.stops, in order
+  const createdSnapshots = [];
+  const createdStops = [];
+  ds.points.forEach(p => {
+    const id = ++state.stopIdCounter;
+    const stop = {
+      id,
+      name: p.name,
+      lat: p.latlng.lat,
+      lng: p.latlng.lng,
+      types: p.isStop ? p.types : ['local','limited','sbs'],
+      marker: null,
+      isWaypoint: !p.isStop,
+    };
+    createStopMarker(stop);
+    state.stops.push(stop);
+    createdStops.push(stop);
+    createdSnapshots.push(snapshotStop(stop));
+  });
+
+  // If a route is currently open (its body panel expanded), append the drawn
+  // sequence to that route's active side. Otherwise the points just land in
+  // the global stop/waypoint list for manual assignment later.
+  const openRouteEl = document.querySelector('.route-body.open');
+  let targetRouteId = null, targetSide = null, insertedAt = null;
+  if (openRouteEl) {
+    targetRouteId = parseInt(openRouteEl.id.replace('rb-', ''));
+    const r = state.routes.find(x => x.id === targetRouteId);
+    if (r) {
+      targetSide = r.activeSide;
+      const arr = targetSide === 'A' ? r.sideA : r.sideB;
+      insertedAt = arr.length;
+      arr.push(...createdStops.map(s => s.id));
+    }
+  }
+
+  // Clean up drawing UI layers (the real markers created above replace them)
+  if (ds.previewLine) map.removeLayer(ds.previewLine);
+  ds.pointMarkers.forEach(m => map.removeLayer(m));
+  map.closePopup();
+  map.doubleClickZoom.enable();
+  document.getElementById('draw-controls').style.display = 'none';
+  window._drawState = null;
+
+  redrawRouteLines();
+  renderStopList();
+  renderRouteList();
+  setTool('pan');
+
+  const stopCount = createdStops.filter(s => !s.isWaypoint).length;
+  const wpCount = createdStops.length - stopCount;
+  setStatus(`✏️ Drew ${createdStops.length} point(s) — ${stopCount} stop(s), ${wpCount} waypoint(s)${targetRouteId ? ` and added to route` : ''}`);
+
+  // Single undo step for the whole drawn batch
+  pushUndo({
+    label: `draw ${createdStops.length} point(s)`,
+    undo() {
+      createdSnapshots.forEach(snap => removeStopById(snap.id));
+      if (targetRouteId !== null) {
+        const r = state.routes.find(x => x.id === targetRouteId);
+        if (r) {
+          const arr = targetSide === 'A' ? r.sideA : r.sideB;
+          createdSnapshots.forEach(snap => {
+            const i = arr.indexOf(snap.id);
+            if (i !== -1) arr.splice(i, 1);
+          });
+        }
+      }
+      redrawRouteLines(); renderStopList(); renderRouteList();
+    },
+    redo() {
+      createdSnapshots.forEach(snap => restoreStopFromSnapshot(snap));
+      if (targetRouteId !== null) {
+        const r = state.routes.find(x => x.id === targetRouteId);
+        if (r) {
+          const arr = targetSide === 'A' ? r.sideA : r.sideB;
+          arr.push(...createdSnapshots.map(s => s.id));
+        }
+      }
+      redrawRouteLines(); renderStopList(); renderRouteList();
+    },
+  });
 }
 
 function openStopPopup(latlng, isWaypoint) {
@@ -767,10 +1263,29 @@ function createStopMarker(stop) {
     stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
       .addTo(map)
       .bindTooltip(`◆ ${stop.name}`, { permanent: false, direction: 'top', offset: [0,-8] });
+    let dragStartPos = null;
+    stop.marker.on('dragstart', () => { dragStartPos = { lat: stop.lat, lng: stop.lng }; });
     stop.marker.on('dragend', () => {
       const ll = stop.marker.getLatLng();
+      const from = dragStartPos || { lat: stop.lat, lng: stop.lng };
+      const to = { lat: ll.lat, lng: ll.lng };
       stop.lat = ll.lat; stop.lng = ll.lng;
       redrawRouteLines();
+      if (from.lat !== to.lat || from.lng !== to.lng) {
+        pushUndo({
+          label: `move waypoint "${stop.name}"`,
+          undo() {
+            stop.lat = from.lat; stop.lng = from.lng;
+            stop.marker.setLatLng([from.lat, from.lng]);
+            redrawRouteLines();
+          },
+          redo() {
+            stop.lat = to.lat; stop.lng = to.lng;
+            stop.marker.setLatLng([to.lat, to.lng]);
+            redrawRouteLines();
+          },
+        });
+      }
     });
     stop.marker.on('click', () => handleRouteMapPick(stop.id));
     stop.marker.on('contextmenu', () => deleteStop(stop.id));
@@ -794,10 +1309,29 @@ function createStopMarker(stop) {
     .addTo(map)
     .bindTooltip(stop.name, { permanent: false, direction: 'top', offset: [0,-8] });
 
+  let dragStartPosStop = null;
+  stop.marker.on('dragstart', () => { dragStartPosStop = { lat: stop.lat, lng: stop.lng }; });
   stop.marker.on('dragend', () => {
     const ll = stop.marker.getLatLng();
+    const from = dragStartPosStop || { lat: stop.lat, lng: stop.lng };
+    const to = { lat: ll.lat, lng: ll.lng };
     stop.lat = ll.lat; stop.lng = ll.lng;
     redrawRouteLines();
+    if (from.lat !== to.lat || from.lng !== to.lng) {
+      pushUndo({
+        label: `move stop "${stop.name}"`,
+        undo() {
+          stop.lat = from.lat; stop.lng = from.lng;
+          stop.marker.setLatLng([from.lat, from.lng]);
+          redrawRouteLines();
+        },
+        redo() {
+          stop.lat = to.lat; stop.lng = to.lng;
+          stop.marker.setLatLng([to.lat, to.lng]);
+          redrawRouteLines();
+        },
+      });
+    }
   });
   
   stop.marker.on('click', () => handleRouteMapPick(stop.id));
@@ -832,6 +1366,13 @@ function confirmStop(id) {
     map.closePopup();
     renderStopList();
     setStatus(`◆ Waypoint "${label}" placed`);
+
+    const snap = snapshotStop(stop);
+    pushUndo({
+      label: `place waypoint "${label}"`,
+      undo() { removeStopById(snap.id); renderStopList(); redrawRouteLines(); },
+      redo() { restoreStopFromSnapshot(snap); renderStopList(); redrawRouteLines(); },
+    });
     return;
   }
 
@@ -854,7 +1395,15 @@ function confirmStop(id) {
   map.closePopup();
   renderStopList();
   renderRouteList();
-  setStatus(`✅ Stop "${name}" added (${types.join(', ')})`);
+  setStatus(`✅ Stop "${name}" added — fetching density score…`);
+  // density scoring removed
+
+  const snap = snapshotStop(stop);
+  pushUndo({
+    label: `place stop "${name}"`,
+    undo() { removeStopById(snap.id); renderStopList(); renderRouteList(); redrawRouteLines(); },
+    redo() { restoreStopFromSnapshot(snap); renderStopList(); renderRouteList(); redrawRouteLines(); },
+  });
 }
 
 // ════════════════════════════════════════════
@@ -960,15 +1509,45 @@ function deleteStop(id) {
   const idx = state.stops.findIndex(s => s.id === id);
   if (idx === -1) return;
   const stop = state.stops[idx];
-  if (stop.marker) map.removeLayer(stop.marker);
-  state.stops.splice(idx, 1);
+  const snap = snapshotStop(stop);
+
+  // Capture exactly which routes/sides referenced this id and at what index,
+  // so undo can splice it back into the exact same position rather than
+  // just appending it to the end of the sequence.
+  const routeRefs = [];
   state.routes.forEach(r => {
-    r.sideA = r.sideA.filter(sid => sid !== id);
-    r.sideB = r.sideB.filter(sid => sid !== id);
+    const aIdx = r.sideA.indexOf(id);
+    if (aIdx !== -1) routeRefs.push({ routeId: r.id, side: 'A', index: aIdx });
+    const bIdx = r.sideB.indexOf(id);
+    if (bIdx !== -1) routeRefs.push({ routeId: r.id, side: 'B', index: bIdx });
   });
+
+  removeStopById(id);
   redrawRouteLines();
   renderStopList();
   renderRouteList();
+
+  pushUndo({
+    label: `delete ${snap.isWaypoint ? 'waypoint' : 'stop'} "${snap.name}"`,
+    undo() {
+      restoreStopFromSnapshot(snap);
+      routeRefs.forEach(ref => {
+        const r = state.routes.find(x => x.id === ref.routeId);
+        if (!r) return;
+        const arr = ref.side === 'A' ? r.sideA : r.sideB;
+        arr.splice(ref.index, 0, snap.id);
+      });
+      redrawRouteLines();
+      renderStopList();
+      renderRouteList();
+    },
+    redo() {
+      removeStopById(snap.id);
+      redrawRouteLines();
+      renderStopList();
+      renderRouteList();
+    },
+  });
 }
 
 // ════════════════════════════════════════════
@@ -981,7 +1560,11 @@ function renderStopList() {
     el.innerHTML = '<div class="empty">No stops placed yet.<br/>Select "Add Stop" and click the map.</div>';
     return;
   }
-  el.innerHTML = allStops.map(s => {
+
+  const stops = allStops.filter(s => !s.isWaypoint);
+  const waypoints = allStops.filter(s => s.isWaypoint);
+
+  function renderStopRow(s) {
     if (s.isWaypoint) {
       return `
         <div class="stop-item" onclick="focusStop(${s.id})" style="border-color:#4c1d95;">
@@ -991,14 +1574,44 @@ function renderStopList() {
           <button class="del-btn" onclick="event.stopPropagation();deleteStop(${s.id})">✕</button>
         </div>`;
     }
+    const scoreBadge = ''; // density scoring removed
     return `
       <div class="stop-item" onclick="focusStop(${s.id})">
         <div class="stop-dot" style="background:${typeColor(s.types[0])};"></div>
         <span class="stop-name">${s.name}</span>
         <span class="stop-tags">${s.types.map(t => `<span class="tag ${t}">${t.toUpperCase()}</span>`).join('')}</span>
+        ${scoreBadge}
         <button class="del-btn" onclick="event.stopPropagation();deleteStop(${s.id})">✕</button>
       </div>`;
-  }).join('');
+  }
+
+  if (!window._stopListCollapsed) window._stopListCollapsed = {};
+
+  function renderSection(key, icon, title, items, emptyMsg) {
+    const isOpen = window._stopListCollapsed[key] !== true;
+    const arrow = isOpen ? '▾' : '▸';
+    const body = isOpen
+      ? `<div class="depot-routes">${items.length ? items.map(renderStopRow).join('') : `<div style="font-size:11px;color:var(--muted);padding:0 2px;">${emptyMsg}</div>`}</div>`
+      : '';
+    return `<div class="depot-section">
+      <div class="depot-header" onclick="toggleStopListSection('${key}')" style="cursor:pointer;user-select:none;">
+        <span style="font-size:11px;color:var(--muted);margin-right:4px;">${arrow}</span>
+        <span class="depot-title">${icon} ${title}</span>
+        <span class="depot-count">${items.length}</span>
+      </div>
+      ${body}
+    </div>`;
+  }
+
+  el.innerHTML =
+    renderSection('stops', '🔵', 'Stops', stops, 'No stops yet.') +
+    renderSection('waypoints', '◆', 'Waypoints', waypoints, 'No waypoints yet.');
+}
+
+function toggleStopListSection(key) {
+  if (!window._stopListCollapsed) window._stopListCollapsed = {};
+  window._stopListCollapsed[key] = !window._stopListCollapsed[key];
+  renderStopList();
 }
 
 function focusStop(id) {
@@ -1562,7 +2175,13 @@ function redrawRouteLines() {
   };
 
   // Build edge usage map: key = "lat1,lng1|lat2,lng2" (order-independent)
-  // value = array of { routeId, side } using that edge, in a stable order
+  // value = array of { routeId, color } using that edge — ONE entry per
+  // route, not per side. A route's own Side A and Side B legitimately share
+  // identical edges constantly (anywhere they haven't diverged yet), and
+  // that's already handled by drawSideBWithBranching drawing it once as a
+  // "shared" segment — it must NOT also be treated as two routes overlapping
+  // and pushed apart, or you get a visible double-line/highlight artifact
+  // on every shared A/B stretch.
   const edgeUsage = new Map();
 
   function edgeKey(p1, p2) {
@@ -1573,15 +2192,15 @@ function redrawRouteLines() {
   state.routes.forEach(r => {
     const coordsA = r.sideA.map(toLatLng).filter(Boolean);
     const coordsB = r.sideB.map(toLatLng).filter(Boolean);
-    [['A', coordsA], ['B', coordsB]].forEach(([side, coords]) => {
+    const routeEdgeKeys = new Set(); // dedupe across A+B for this one route
+    [coordsA, coordsB].forEach(coords => {
       for (let i = 0; i < coords.length - 1; i++) {
-        const key = edgeKey(coords[i], coords[i+1]);
-        if (!edgeUsage.has(key)) edgeUsage.set(key, []);
-        const arr = edgeUsage.get(key);
-        // avoid double-counting if A and B of the SAME route share the
-        // exact same edge twice — still list separately so it gets offset
-        arr.push({ routeId: r.id, side, color: r.color });
+        routeEdgeKeys.add(edgeKey(coords[i], coords[i+1]));
       }
+    });
+    routeEdgeKeys.forEach(key => {
+      if (!edgeUsage.has(key)) edgeUsage.set(key, []);
+      edgeUsage.get(key).push({ routeId: r.id, color: r.color });
     });
   });
 
@@ -1603,20 +2222,17 @@ function latLngKey(coord) {
   return coord[0].toFixed(6) + ',' + coord[1].toFixed(6);
 }
 
-// Compute a perpendicular pixel offset for an edge given how many routes
-// share it and this route's rank among them.
-function getEdgeOffset(p1, p2, routeId, side, edgeUsage, edgeKey) {
+// Compute a perpendicular pixel offset for an edge given how many OTHER
+// routes share it and this route's rank among them. A route's own Side A
+// and Side B are never separate "sharers" — see edgeUsage construction above.
+function getEdgeOffset(p1, p2, routeId, edgeUsage, edgeKey) {
   const key = edgeKey(p1, p2);
   const sharers = edgeUsage.get(key) || [];
   if (sharers.length <= 1) return [0, 0];
 
-  // Stable order: sort by routeId then side so all routes agree on ranks
-  const sorted = [...sharers].sort((a, b) =>
-    a.routeId !== b.routeId ? a.routeId - b.routeId : a.side.localeCompare(b.side)
-  );
-  // Find THIS entry's rank (handle duplicate routeId+side by using first match
-  // not yet consumed — simple approach: find index of first match)
-  let rank = sorted.findIndex(s => s.routeId === routeId && s.side === side);
+  // Stable order: sort by routeId so all routes agree on ranks
+  const sorted = [...sharers].sort((a, b) => a.routeId - b.routeId);
+  let rank = sorted.findIndex(s => s.routeId === routeId);
   if (rank === -1) rank = 0;
 
   const n = sorted.length;
@@ -1638,13 +2254,13 @@ function getEdgeOffset(p1, p2, routeId, side, edgeUsage, edgeKey) {
 // Apply per-edge pixel offsets to a coordinate path, returning a new
 // lat/lng path where each point is nudged based on the offsets of its
 // adjacent edges (averaged at shared vertices for a smooth line).
-function applyEdgeOffsets(coords, routeId, side, edgeUsage, edgeKey) {
+function applyEdgeOffsets(coords, routeId, edgeUsage, edgeKey) {
   if (coords.length < 2) return coords;
   const n = coords.length;
   const pointOffsets = coords.map(() => [0, 0]);
 
   for (let i = 0; i < n - 1; i++) {
-    const [ox, oy] = getEdgeOffset(coords[i], coords[i+1], routeId, side, edgeUsage, edgeKey);
+    const [ox, oy] = getEdgeOffset(coords[i], coords[i+1], routeId, edgeUsage, edgeKey);
     // Accumulate offset onto both endpoints of this edge
     pointOffsets[i][0]   += ox; pointOffsets[i][1]   += oy;
     pointOffsets[i+1][0] += ox; pointOffsets[i+1][1] += oy;
@@ -1663,6 +2279,16 @@ function applyEdgeOffsets(coords, routeId, side, edgeUsage, edgeKey) {
   });
 }
 
+// (Overpass density scoring section removed — see Cost Settings for ridership rate)
+// Overpass density scoring removed — public Overpass instances block browser fetch() (CORS/403).
+// Ridership is now estimated purely from the flat boardingsPerStopPerHour rate in Cost Settings.
+
+
+
+
+// Density scoring removed — always returns 1.0 (flat rate from Cost Settings)
+function densityMultiplier(score) { return 1.0; }
+
 // Build the stats tooltip HTML for a route (length in miles + bus count)
 function buildRouteStatsTooltip(r, coordsA, coordsB) {
   const lenMeters = (coords) => {
@@ -1674,7 +2300,35 @@ function buildRouteStatsTooltip(r, coordsA, coordsB) {
   };
   const milesA = lenMeters(coordsA) / 1609.344;
   const milesB = lenMeters(coordsB) / 1609.344;
-  const totalMiles = milesA + milesB;
+  const totalMiles = milesA + milesB; // one full A→B→A round trip
+  const busCount = r.fleetList ? r.fleetList.length : (r.buses || 0);
+
+  const cs = state.costSettings;
+  const roundTripHours = cs.avgSpeedMph > 0 ? totalMiles / cs.avgSpeedMph : 0;
+
+  // Operating cost: blend mileage-based and time-based cost per round trip,
+  // scaled by however many buses are actually assigned to the route.
+  const costPerRoundTripPerBus = (totalMiles * cs.costPerVehicleMile) + (roundTripHours * cs.costPerRevenueHour);
+  const dailyTripsPerBus = cs.avgSpeedMph > 0 && roundTripHours > 0 ? cs.serviceHoursPerDay / roundTripHours : 0;
+  const dailyOperatingCost = costPerRoundTripPerBus * dailyTripsPerBus * busCount;
+
+  // Infrastructure: one-time cost to install basic stop amenities at every
+  // physical stop on the route (waypoints excluded — they aren't real stops).
+  const allStopIds = new Set([...r.sideA, ...r.sideB]);
+  const stopCount = [...allStopIds].filter(id => {
+    const s = state.stops.find(x => x.id === id);
+    return s && !s.isWaypoint;
+  }).length;
+  const infrastructureCost = stopCount * cs.stopInstallCost;
+
+  // Ridership: flat boardingsPerStopPerHour rate from Cost Settings
+  const routeStops = [...allStopIds].map(id => state.stops.find(x => x.id === id)).filter(s => s && !s.isWaypoint);
+  const estDailyRidership = routeStops.reduce((sum, s) => {
+    return sum + (cs.boardingsPerStopPerHour * cs.serviceHoursPerDay);
+  }, 0);
+  const scoredCount = 0; const unscoredCount = 0; // density scoring removed
+
+  const fmtMoney = (n) => '$' + Math.round(n).toLocaleString();
 
   return `
     <div style="font-size:11px;line-height:1.5;">
@@ -1682,13 +2336,21 @@ function buildRouteStatsTooltip(r, coordsA, coordsB) {
       <div><strong>Type:</strong> ${r.type.toUpperCase()}</div>
       <div><strong>Side A:</strong> ${milesA.toFixed(2)} mi</div>
       <div><strong>Side B:</strong> ${milesB.toFixed(2)} mi</div>
-      <div><strong>Total:</strong> ${totalMiles.toFixed(2)} mi</div>
-      <div><strong>Buses:</strong> ${r.fleetList ? r.fleetList.length : r.buses}</div>
+      <div><strong>Total (round trip):</strong> ${totalMiles.toFixed(2)} mi</div>
+      <div><strong>Buses:</strong> ${busCount}</div>
+      <div style="margin-top:4px;border-top:1px solid rgba(255,255,255,0.15);padding-top:4px;">
+        <div><strong>Round-trip time:</strong> ~${roundTripHours.toFixed(1)} hr</div>
+        <div><strong>Est. cost per bus/day:</strong> ${fmtMoney(costPerRoundTripPerBus * dailyTripsPerBus)}</div>
+        <div><strong>Est. daily operating cost:</strong> ${busCount > 0 ? fmtMoney(dailyOperatingCost) : '<span style="color:var(--limited);font-size:10px;">$0 — no buses assigned yet</span>'}</div>
+        <div><strong>Stop infrastructure cost:</strong> ${fmtMoney(infrastructureCost)} <span style="color:var(--muted);">(${stopCount} stops)</span></div>
+        <div><strong>Est. daily ridership:</strong> ~${Math.round(estDailyRidership).toLocaleString()}</div>
+      </div>
+      <div style="margin-top:3px;font-size:9px;color:var(--muted);">Ridership estimated from boardings/stop/hr rate — adjust in ⚙️ Cost Settings</div>
     </div>`;
 }
 
 function drawSideWithOffsets(r, coordsA, side, edgeUsage, edgeKey) {
-  const offsetCoords = applyEdgeOffsets(coordsA, r.id, side, edgeUsage, edgeKey);
+  const offsetCoords = applyEdgeOffsets(coordsA, r.id, edgeUsage, edgeKey);
   // Need original (un-offset) coords to compute true stats
   const coordsBForStats = r.sideB.map(id => {
     const s = state.stops.find(x => x.id === id);
@@ -1703,20 +2365,24 @@ function drawSideWithOffsets(r, coordsA, side, edgeUsage, edgeKey) {
 
 function drawSideBWithBranching(r, coordsB, coordsA, edgeUsage, edgeKey) {
   const aSet = new Set(coordsA.map(latLngKey));
-  const offsetCoordsB = applyEdgeOffsets(coordsB, r.id, 'B', edgeUsage, edgeKey);
+  const offsetCoordsB = applyEdgeOffsets(coordsB, r.id, edgeUsage, edgeKey);
 
   // Walk coordsB, grouping consecutive points into "shared" vs "diverged" segments
-  // (use original coordsB for membership test, offsetCoordsB for drawing)
+  // (use original coordsB for membership test, offsetCoordsB for drawing).
+  // Segments that match Side A are SKIPPED here — Side A already draws that
+  // exact stretch, so drawing it a second time as a translucent Side B copy
+  // on top of it just made shared stretches look thicker/highlighted.
   let currentGroup = [];
   let currentShared = aSet.has(latLngKey(coordsB[0]));
 
   function flushGroup(isShared) {
     if (currentGroup.length < 2) return;
+    if (isShared) return; // already drawn by Side A — don't double-draw
     const poly = L.polyline(currentGroup, {
       color: r.color,
-      weight: isShared ? 4 : 3,
-      opacity: isShared ? 0.6 : 0.85,
-      dashArray: isShared ? null : '6,5',
+      weight: 3,
+      opacity: 0.85,
+      dashArray: '6,5',
     }).addTo(map).bindTooltip(() => buildRouteStatsTooltip(r, coordsA, coordsB), { sticky: true });
     r.polysB.push(poly);
   }
@@ -2376,12 +3042,13 @@ function updateSpeed(v) {
 // ════════════════════════════════════════════
 function saveToFile() {
   const data = {
-    version: 2,
+    version: 3,
     savedAt: new Date().toISOString(),
     stopIdCounter: state.stopIdCounter,
     routeIdCounter: state.routeIdCounter,
     depotIdCounter: state.depotIdCounter,
     depots: state.depots.map(d => ({ id: d.id, name: d.name })),
+    costSettings: { ...state.costSettings },
     stops: state.stops.map(s => ({
       id: s.id, name: s.name, lat: s.lat, lng: s.lng,
       types: s.types, isWaypoint: !!s.isWaypoint,
@@ -2471,6 +3138,9 @@ function applyLoadedData(data) {
   state.routeIdCounter = data.routeIdCounter || Math.max(0, ...state.routes.map(r => r.id), 0);
   state.depotIdCounter = data.depotIdCounter || Math.max(0, ...state.depots.map(d => d.id), 0);
 
+  // Restore cost settings if present (older saves won't have this — fall back to defaults)
+  state.costSettings = { ...DEFAULT_COST_SETTINGS, ...(data.costSettings || {}) };
+
   // Clear any in-progress UI selections
   window._multiAddOrder = {};
   window._spawnType = {};
@@ -2491,6 +3161,50 @@ function applyLoadedData(data) {
 }
 
 
+// ════════════════════════════════════════════
+//  COST SETTINGS MODAL
+// ════════════════════════════════════════════
+const DEFAULT_COST_SETTINGS = {
+  costPerRevenueHour: 250,
+  costPerVehicleMile: 30.40,
+  avgSpeedMph: 9,
+  stopInstallCost: 4570,
+  boardingsPerStopPerHour: 8,
+  serviceHoursPerDay: 16,
+};
+
+function openCostSettings() {
+  const cs = state.costSettings;
+  Object.keys(DEFAULT_COST_SETTINGS).forEach(key => {
+    const input = document.getElementById(`cs-${key}`);
+    if (input) input.value = cs[key];
+  });
+  document.getElementById('cost-settings-modal').classList.add('open');
+}
+
+function closeCostSettings() {
+  document.getElementById('cost-settings-modal').classList.remove('open');
+}
+
+function saveCostSettings() {
+  const next = {};
+  for (const key of Object.keys(DEFAULT_COST_SETTINGS)) {
+    const input = document.getElementById(`cs-${key}`);
+    const val = parseFloat(input.value);
+    next[key] = isNaN(val) ? state.costSettings[key] : val;
+  }
+  state.costSettings = next;
+  closeCostSettings();
+  setStatus('⚙️ Cost settings updated');
+}
+
+function resetCostSettingsToDefaults() {
+  Object.keys(DEFAULT_COST_SETTINGS).forEach(key => {
+    const input = document.getElementById(`cs-${key}`);
+    if (input) input.value = DEFAULT_COST_SETTINGS[key];
+  });
+}
+
 function setStatus(msg) {
   document.getElementById('statusbar').textContent = msg;
 }
@@ -2499,6 +3213,7 @@ function setStatus(msg) {
 renderStopList();
 renderRouteList();
 renderDepotList();
+updateUndoRedoButtons();
 </script>
 </body>
 </html>
