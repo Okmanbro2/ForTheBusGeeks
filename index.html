@@ -96,23 +96,6 @@
   .sep { width: 1px; background: var(--border); height: 22px; margin: 0 2px; flex-shrink: 0; }
 
   /* ── Floating Sim HUD — overlays the map, steals zero layout height ── */
-  #sim-hud {
-    position: absolute;
-    top: 56px;          /* just below the topbar */
-    right: 330px;       /* clear of the side panel (320px + 10px gap) */
-    z-index: 800;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(26,29,39,0.92);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 5px 12px;
-    backdrop-filter: blur(6px);
-    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
-    pointer-events: all;
-  }
-
   #sim-btn {
     padding: 4px 14px;
     border-radius: 6px;
@@ -127,10 +110,108 @@
   }
   #sim-btn.running { background: var(--danger); color: #fff; }
 
+  #speed-hud {
+    position: absolute;
+    top: 56px;
+    right: calc(var(--panel-w) + 14px);
+    z-index: 800;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(26,29,39,0.92);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 12px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    transition: right 0.2s ease;
+  }
+  #speed-hud.panel-is-collapsed { right: 14px; }
+
   #speed-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
-  #speed-range { width: 80px; accent-color: var(--accent); }
-  /* Keep old #sim-controls ref harmless */
-  #sim-controls { display: contents; }
+  #speed-range { width: 80px; accent-color: var(--accent); flex-shrink: 0; }
+
+  /* ── Floating Legend Panel ── */
+  #legend-panel {
+    position: absolute;
+    top: 56px;
+    right: calc(var(--panel-w) + 14px);
+    z-index: 900;
+    width: 240px;
+    max-height: calc(100vh - 140px);
+    background: rgba(26,29,39,0.97);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    backdrop-filter: blur(6px);
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    transition: right 0.2s ease;
+  }
+  #legend-panel.open { display: flex; }
+  #legend-panel.panel-is-collapsed { right: 14px; }
+
+  #legend-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  #legend-panel-header button {
+    background: none; border: none; color: var(--muted);
+    font-size: 13px; cursor: pointer; padding: 0 2px; line-height: 1;
+  }
+  #legend-panel-header button:hover { color: var(--text); }
+
+  #legend-panel-body {
+    padding: 10px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .legend-section-title {
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+  }
+
+  #legend-route-list {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .legend-route-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .legend-route-row:hover { background: rgba(255,255,255,0.04); }
+  .legend-route-row.hidden-route { opacity: 0.4; }
+  .legend-route-badge {
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: center;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
 
   /* ── Main Layout ── */
   #main {
@@ -161,7 +242,40 @@
     flex-shrink: 0;
     position: relative;
     z-index: 2;
+    transition: width 0.2s ease, min-width 0.2s ease;
   }
+  #panel.collapsed {
+    width: 0;
+    min-width: 0;
+    border-left: none;
+  }
+  #panel.collapsed > *:not(#panel-toggle-tab) { display: none; }
+
+  #panel-toggle-tab {
+    position: absolute;
+    top: 50%;
+    right: var(--panel-w);
+    transform: translateY(-50%);
+    width: 18px;
+    height: 64px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 50;
+    color: var(--muted);
+    font-size: 11px;
+    writing-mode: vertical-rl;
+    letter-spacing: 0.05em;
+    user-select: none;
+    transition: right 0.2s ease, color 0.15s, border-color 0.15s;
+  }
+  #panel-toggle-tab:hover { color: var(--accent); border-color: var(--accent); }
+  #panel-toggle-tab.panel-is-collapsed { right: 0; }
 
   .panel-tabs {
     display: flex;
@@ -302,7 +416,9 @@
     font-size: 11px; font-weight: 800; padding: 2px 8px;
     border-radius: 4px; color: #000;
   }
-  .route-name { font-size: 12px; font-weight: 700; flex: 1; overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .route-name-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .route-name { font-size: 12px; font-weight: 700; overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .route-via  { font-size: 10px; font-weight: 500; color: var(--muted); overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
   .route-expand { color: var(--muted); font-size: 12px; }
   .route-body { display: none; padding: 10px; background: var(--surface); }
   .route-body.open { display: block; }
@@ -471,7 +587,7 @@
 
 <!-- ══ TOP BAR ══ -->
 <div id="topbar">
-  <h1 title="FOR THE BUS GEEKS">BUS GEEK 1.0</h1>
+  <h1 title="FOR THE BUS GEEKS">v1.0</h1>
   <div class="sep"></div>
   <div class="tool-group">
     <button class="tool-btn" id="btn-pan"         onclick="setTool('pan')">✋ Pan</button>
@@ -495,18 +611,136 @@
   </div>
   <div class="sep"></div>
   <div class="tool-group">
-    <button class="tool-btn" id="btn-cost-settings" onclick="openCostSettings()">⚙️ Cost Settings</button>
+    <button class="tool-btn" id="btn-cost-settings" onclick="openCostSettings()">⚙️ Settings</button>
+    <button class="tool-btn" id="btn-legend" onclick="openLegend()">🗺 Legend</button>
+  </div>
+
+  <div class="tool-group" style="margin-left:auto;">
+    <button id="sim-btn" onclick="toggleSim()">▶ Start Simulation</button>
   </div>
 </div>
 
-<!-- ══ FLOATING SIM HUD ══ -->
-<div id="sim-hud">
+<!-- ══ FLOATING SPEED HUD ══ -->
+<div id="speed-hud">
   <span id="speed-label">Speed</span>
   <input type="range" id="speed-range" min="1" max="10" value="5" oninput="updateSpeed(this.value)" />
-  <button id="sim-btn" onclick="toggleSim()">▶ Start Simulation</button>
+</div>
+
+<!-- ══ NEW / EDIT ROUTE MODAL ══ -->
+<div class="modal-overlay" id="new-route-modal">
+  <div class="modal-box">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <h2 style="margin:0;" id="nr-form-title">New Route</h2>
+      <button class="btn btn-muted" style="padding:2px 8px;font-size:11px;" onclick="closeNewRouteForm()">✕</button>
+    </div>
+
+    <div class="modal-field">
+      <label>Route Name</label>
+      <input type="text" id="nr-name" placeholder="e.g. Bx15" />
+    </div>
+    <div class="modal-field">
+      <label>Side A Destination</label>
+      <input type="text" id="nr-destA" placeholder="e.g. Fordham Plaza" />
+    </div>
+    <div class="modal-field">
+      <label>Side B Destination</label>
+      <input type="text" id="nr-destB" placeholder="e.g. Hub 149 St" />
+    </div>
+
+    <div class="modal-field">
+      <label>Via</label>
+      <div id="nr-via-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;"></div>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="nr-via-input" placeholder="e.g. 3 Av" style="flex:1;"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();addViaEntry();}" />
+        <button class="btn btn-accent" style="padding:4px 12px;" onclick="addViaEntry()">+</button>
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label>Full Name Preview</label>
+      <div id="nr-full-preview" style="font-size:12px;color:var(--muted);padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;min-height:16px;">—</div>
+    </div>
+
+    <div class="modal-field">
+      <label>Service Type</label>
+      <div class="type-chips" id="nr-type-chips">
+        <div class="chip local selected" onclick="selectRouteType('local')">Local</div>
+        <div class="chip limited"        onclick="selectRouteType('limited')">Limited</div>
+        <div class="chip sbs"            onclick="selectRouteType('sbs')">SBS</div>
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label>Route Color</label>
+      <input type="color" id="nr-color" value="#f5a623" style="width:48px;height:28px;padding:2px;background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;" />
+    </div>
+
+    <div class="modal-field">
+      <label>Depot</label>
+      <select id="nr-depot"></select>
+    </div>
+
+    <button class="btn btn-accent btn-full" id="nr-submit-btn" onclick="submitRouteForm()">Create</button>
+  </div>
 </div>
 
 <!-- ══ COST SETTINGS MODAL ══ -->
+<!-- ══ LEGEND MODAL ══ -->
+<!-- ══ FLOATING LEGEND PANEL ══ -->
+<div id="legend-panel">
+  <div id="legend-panel-header">
+    <span>🗺 Legend</span>
+    <button onclick="closeLegend()" title="Close">✕</button>
+  </div>
+  <div id="legend-panel-body">
+    <div class="legend-section-title">Map Symbols</div>
+    <div style="display:flex;flex-direction:column;gap:7px;font-size:11px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:16px;height:16px;border-radius:50%;background:#3b82f6;border:2.5px solid #fff;box-shadow:0 0 0 1.5px #3b82f6;flex-shrink:0;"></div>
+        <span>Full-time Terminal</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:16px;height:16px;border-radius:50%;background:transparent;border:2.5px solid #3b82f6;box-shadow:0 0 0 1.5px #3b82f6;flex-shrink:0;"></div>
+        <span>Part-time Terminal</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:20px;height:12px;border-radius:6px;background:#22c55e;flex-shrink:0;"></div>
+        <span><strong style="color:#22c55e;">LOCAL</strong> stop</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:20px;height:12px;border-radius:6px;background:#f59e0b;flex-shrink:0;"></div>
+        <span><strong style="color:#f59e0b;">LIMITED</strong> stop</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:20px;height:12px;border-radius:6px;background:#3b82f6;flex-shrink:0;"></div>
+        <span><strong style="color:#3b82f6;">SBS</strong> stop</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:12px;height:12px;background:#8b5cf6;border-radius:2px;transform:rotate(45deg);flex-shrink:0;"></div>
+        <span style="color:#c4b5fd;">Waypoint</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:22px;height:0;border-top:3px solid var(--accent);flex-shrink:0;"></div>
+        <span>Side A</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:22px;height:0;border-top:3px dashed var(--accent);flex-shrink:0;"></div>
+        <span>Side B (where diverging)</span>
+      </div>
+    </div>
+
+    <div class="legend-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Routes</span>
+      <div style="display:flex;gap:4px;">
+        <button class="btn btn-muted" style="font-size:9px;padding:1px 6px;" onclick="setAllRoutesVisibility(true)">Show All</button>
+        <button class="btn btn-muted" style="font-size:9px;padding:1px 6px;" onclick="setAllRoutesVisibility(false)">Hide All</button>
+      </div>
+    </div>
+    <div id="legend-route-list"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="cost-settings-modal">
   <div class="modal-box">
     <h2>⚙️ Cost &amp; Ridership Settings</h2>
@@ -600,49 +834,10 @@
       </div>
 
       <!-- New Route Form -->
-      <div class="card" id="new-route-form" style="display:none;">
-        <div class="card-header">
-          <span class="card-title" id="nr-form-title">New Route</span>
-          <button class="btn btn-muted" style="padding:2px 8px;font-size:11px;" onclick="closeNewRouteForm()">✕</button>
-        </div>
-        <label>Route Name</label>
-        <input type="text" id="nr-name" placeholder="e.g. Bx15" />
-
-        <label>Side A Destination</label>
-        <input type="text" id="nr-destA" placeholder="e.g. Fordham Plaza" />
-
-        <label>Side B Destination</label>
-        <input type="text" id="nr-destB" placeholder="e.g. Hub 149 St" />
-
-        <label>Via</label>
-        <div id="nr-via-list" style="display:flex;flex-direction:column;gap:4px;margin-bottom:6px;"></div>
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <input type="text" id="nr-via-input" placeholder="e.g. 3 Av" style="flex:1;margin-bottom:0;"
-            onkeydown="if(event.key==='Enter'){event.preventDefault();addViaEntry();}" />
-          <button class="btn btn-accent" style="padding:4px 12px;" onclick="addViaEntry()">+</button>
-        </div>
-
-        <label>Full Name Preview</label>
-        <div id="nr-full-preview" style="font-size:12px;color:var(--muted);padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:5px;margin-bottom:10px;min-height:16px;">—</div>
-
-        <label>Service Type</label>
-        <div class="type-chips" id="nr-type-chips">
-          <div class="chip local selected" onclick="selectRouteType('local')">Local</div>
-          <div class="chip limited"        onclick="selectRouteType('limited')">Limited</div>
-          <div class="chip sbs"            onclick="selectRouteType('sbs')">SBS</div>
-        </div>
-        <label>Route Color</label>
-        <input type="color" id="nr-color" value="#f5a623" style="width:48px;height:28px;padding:2px;background:none;border:1px solid var(--border);border-radius:5px;cursor:pointer;margin-bottom:8px;" />
-
-        <label>Depot</label>
-        <select id="nr-depot" style="margin-bottom:10px;"></select>
-
-        <button class="btn btn-accent btn-full" id="nr-submit-btn" onclick="submitRouteForm()">Create</button>
-      </div>
-
       <div id="route-list"></div>
     </div>
   </div>
+  <div id="panel-toggle-tab" onclick="togglePanel()">show/hide</div>
 </div>
 
 <!-- STATUS BAR -->
@@ -780,6 +975,21 @@ function buildFullRouteName(r) {
     full += ` via ${r.vias.join(', ')}`;
   }
   return full.trim();
+}
+
+// Just the destination portion (no route name, no "via …"), for compact
+// two-line headers: "Fordham Plaza/Hub 149 St"
+function buildRouteDestText(r) {
+  if (r.destA && r.destB) return `${r.destA}/${r.destB}`;
+  if (r.destA || r.destB) return r.destA || r.destB;
+  return r.name;
+}
+
+// Just the via portion, prefixed, for the muted subtitle line:
+// "via 3 Av, 149 St" — or '' if no vias are set.
+function buildRouteViaText(r) {
+  if (!r.vias || !r.vias.length) return '';
+  return `via ${r.vias.join(', ')}`;
 }
 
 let selectedRouteType = 'local';
@@ -1246,6 +1456,57 @@ function togglePopupChip(id, type) {
 
 // Create and attach a Leaflet marker for a stop/waypoint object (mutates stop.marker).
 // Used both when placing new stops and when reconstructing from a loaded save file.
+// ════════════════════════════════════════════
+//  Local        → small solid filled dot
+//  Limited      → hollow ring (white center, colored border)
+//  SBS/Select   → circle with a "+" inside
+//  Multi-type stops layer SBS plus icon over the highest-priority type.
+// ════════════════════════════════════════════
+function buildStopIconHTML(types) {
+  // Priority for which "shape" wins when a stop serves multiple types:
+  // SBS plus-circle > Limited hollow ring > Local solid dot
+  const hasSbs = types.includes('sbs');
+  const hasLimited = types.includes('limited');
+
+  // Pick the dominant color: SBS blue > Limited amber > Local green
+  const color = hasSbs ? '#3b82f6' : hasLimited ? '#f59e0b' : '#22c55e';
+
+  let inner;
+  if (hasSbs) {
+    // SBS
+    inner = `<div style="
+      width:18px;height:18px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      box-shadow:0 0 4px rgba(0,0,0,0.6);
+      position:relative;
+    ">
+      <div style="position:absolute;left:50%;top:3px;bottom:3px;width:2px;
+        background:#fff;transform:translateX(-50%);border-radius:1px;"></div>
+      <div style="position:absolute;top:50%;left:3px;right:3px;height:2px;
+        background:#fff;transform:translateY(-50%);border-radius:1px;"></div>
+    </div>`;
+  } else if (hasLimited) {
+    // Limited
+    inner = `<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};border:2px solid #ff6b00;
+      box-shadow:0 0 4px rgba(0,0,0,0.6);
+    "></div>`;
+  } else {
+    // Local
+    inner = `<div style="
+      width:12px;height:12px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      box-shadow:0 0 4px rgba(0,0,0,0.6);
+    "></div>`;
+  }
+
+  // Always center inside an 18×18 box so iconAnchor stays consistent
+  // regardless of which shape variant is drawn.
+  return `<div style="width:18px;height:18px;display:flex;align-items:center;justify-content:center;">${inner}</div>`;
+}
+
+
 function createStopMarker(stop) {
   if (stop.isWaypoint) {
     const icon = L.divIcon({
@@ -1293,21 +1554,18 @@ function createStopMarker(stop) {
     return;
   }
 
-  const color = typeColor(stop.types[0]);
   const icon = L.divIcon({
     className: '',
-    html: `<div style="
-      width:14px;height:14px;border-radius:50%;
-      background:${color};border:2px solid #fff;
-      box-shadow:0 0 4px rgba(0,0,0,0.6);
-    "></div>`,
-    iconSize: [14,14],
-    iconAnchor: [7,7],
+    html: buildStopIconHTML(stop.types),
+    iconSize: [18,18],
+    iconAnchor: [9,9],
   });
 
+  const svcLabel = stop.types.map(t => t==='sbs'?'SBS':t==='limited'?'LTD':'LOCAL').join(' / ');
   stop.marker = L.marker([stop.lat, stop.lng], { icon, draggable: true })
     .addTo(map)
-    .bindTooltip(stop.name, { permanent: false, direction: 'top', offset: [0,-8] });
+    .bindTooltip(`${stop.name} <span style="color:#9ca3af;">(${svcLabel})</span>`,
+      { permanent: false, direction: 'top', offset: [0,-8] });
 
   let dragStartPosStop = null;
   stop.marker.on('dragstart', () => { dragStartPosStop = { lat: stop.lat, lng: stop.lng }; });
@@ -1480,16 +1738,22 @@ function saveStopEdit(stopId) {
   stop.name = name;
   stop.types = types;
 
-  // Update marker tooltip
+  // Update marker tooltip — use the same rich (LOCAL / LTD / SBS) label format
+  // as when the stop was first created, so the tooltip always matches stop.types
+  // exactly and there's no stale/plain-name tooltip left over from before the edit.
   if (stop.marker) {
+    const svcLabel = stop.types.map(t => t==='sbs'?'SBS':t==='limited'?'LTD':'LOCAL').join(' / ');
     stop.marker.unbindTooltip();
-    stop.marker.bindTooltip(name, { permanent: false, direction: 'top', offset: [0,-8] });
-    // Update marker color
-    const color = typeColor(types[0]);
+    stop.marker.bindTooltip(`${stop.name} <span style="color:#9ca3af;">(${svcLabel})</span>`,
+      { permanent: false, direction: 'top', offset: [0,-8] });
+    // Update marker ICON — must use the same buildStopIconHTML() shape system
+    // (solid dot / hollow ring / plus-circle) used at creation time, not a
+    // hardcoded plain dot. Using the wrong builder here was why an edited
+    // stop's marker kept showing its old shape/style after Save.
     const icon = L.divIcon({
       className: '',
-      html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.6);"></div>`,
-      iconSize: [14,14], iconAnchor: [7,7],
+      html: buildStopIconHTML(stop.types),
+      iconSize: [18,18], iconAnchor: [9,9],
     });
     stop.marker.setIcon(icon);
   }
@@ -1629,20 +1893,25 @@ let nrFormState = {
 };
 
 function openNewRouteForm() {
-  switchTab('routes');
-  nrFormState = { editingRouteId: null, vias: [] };
-  document.getElementById('nr-form-title').textContent = 'New Route';
-  document.getElementById('nr-submit-btn').textContent = 'Create';
-  document.getElementById('nr-name').value = '';
-  document.getElementById('nr-destA').value = '';
-  document.getElementById('nr-destB').value = '';
-  document.getElementById('nr-via-input').value = '';
-  document.getElementById('nr-color').value = '#f5a623';
-  selectRouteType('local');
-  populateDepotSelect(null);
-  renderViaList();
-  updateFullNamePreview();
-  document.getElementById('new-route-form').style.display = 'block';
+  try {
+    switchTab('routes');
+    nrFormState = { editingRouteId: null, vias: [] };
+    document.getElementById('nr-form-title').textContent = 'New Route';
+    document.getElementById('nr-submit-btn').textContent = 'Create';
+    document.getElementById('nr-name').value = '';
+    document.getElementById('nr-destA').value = '';
+    document.getElementById('nr-destB').value = '';
+    document.getElementById('nr-via-input').value = '';
+    document.getElementById('nr-color').value = '#f5a623';
+    selectRouteType('local');
+    populateDepotSelect(null);
+    renderViaList();
+    updateFullNamePreview();
+    document.getElementById('new-route-modal').classList.add('open');
+  } catch (e) {
+    console.error('openNewRouteForm failed:', e);
+    setStatus('⚠️ Could not open the route form — see console for details');
+  }
 }
 
 // Open the same form pre-filled for editing an existing route's info
@@ -1651,25 +1920,29 @@ function openNewRouteForm() {
 function openEditRouteForm(routeId) {
   const r = state.routes.find(x => x.id === routeId);
   if (!r) return;
-  switchTab('routes');
-  nrFormState = { editingRouteId: routeId, vias: [...(r.vias || [])] };
-  document.getElementById('nr-form-title').textContent = `Edit Route — ${r.name}`;
-  document.getElementById('nr-submit-btn').textContent = 'Save Changes';
-  document.getElementById('nr-name').value = r.name || '';
-  document.getElementById('nr-destA').value = r.destA || '';
-  document.getElementById('nr-destB').value = r.destB || '';
-  document.getElementById('nr-via-input').value = '';
-  document.getElementById('nr-color').value = r.color || '#f5a623';
-  selectRouteType(r.type || 'local');
-  populateDepotSelect(r.depotId || null);
-  renderViaList();
-  updateFullNamePreview();
-  document.getElementById('new-route-form').style.display = 'block';
-  document.getElementById('new-route-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  try {
+    switchTab('routes');
+    nrFormState = { editingRouteId: routeId, vias: [...(r.vias || [])] };
+    document.getElementById('nr-form-title').textContent = `Edit Route — ${r.name}`;
+    document.getElementById('nr-submit-btn').textContent = 'Save Changes';
+    document.getElementById('nr-name').value = r.name || '';
+    document.getElementById('nr-destA').value = r.destA || '';
+    document.getElementById('nr-destB').value = r.destB || '';
+    document.getElementById('nr-via-input').value = '';
+    document.getElementById('nr-color').value = r.color || '#f5a623';
+    selectRouteType(r.type || 'local');
+    populateDepotSelect(r.depotId || null);
+    renderViaList();
+    updateFullNamePreview();
+    document.getElementById('new-route-modal').classList.add('open');
+  } catch (e) {
+    console.error('openEditRouteForm failed:', e);
+    setStatus('⚠️ Could not open the route editor — see console for details');
+  }
 }
 
 function closeNewRouteForm() {
-  document.getElementById('new-route-form').style.display = 'none';
+  document.getElementById('new-route-modal').classList.remove('open');
   nrFormState = { editingRouteId: null, vias: [] };
 }
 
@@ -2160,13 +2433,15 @@ function quickAddToSide(routeId, stopId) {
 const EDGE_OFFSET_PX = 5; // pixel spacing between parallel overlapping lines
 
 function redrawRouteLines() {
-  // First pass: clear all existing layers
+  // First pass: clear all existing layers (lines + terminal markers)
   state.routes.forEach(r => {
     if (r.polyA) { map.removeLayer(r.polyA); r.polyA = null; }
     if (r.polysA) { r.polysA.forEach(p => map.removeLayer(p)); }
     r.polysA = [];
     if (r.polysB) { r.polysB.forEach(p => map.removeLayer(p)); }
     r.polysB = [];
+    if (r.terminalMarkers) { r.terminalMarkers.forEach(m => map.removeLayer(m)); }
+    r.terminalMarkers = [];
   });
 
   const toLatLng = id => {
@@ -2189,7 +2464,7 @@ function redrawRouteLines() {
     return a < b ? `${a}|${b}` : `${b}|${a}`;
   }
 
-  state.routes.forEach(r => {
+  state.routes.filter(r => !r.hidden).forEach(r => {
     const coordsA = r.sideA.map(toLatLng).filter(Boolean);
     const coordsB = r.sideB.map(toLatLng).filter(Boolean);
     const routeEdgeKeys = new Set(); // dedupe across A+B for this one route
@@ -2204,7 +2479,7 @@ function redrawRouteLines() {
     });
   });
 
-  state.routes.forEach(r => {
+  state.routes.filter(r => !r.hidden).forEach(r => {
     const coordsA = r.sideA.map(toLatLng).filter(Boolean);
     const coordsB = r.sideB.map(toLatLng).filter(Boolean);
 
@@ -2214,7 +2489,61 @@ function redrawRouteLines() {
     if (coordsB.length > 1) {
       drawSideBWithBranching(r, coordsB, coordsA, edgeUsage, edgeKey);
     }
+
+    // Terminal markers
+    drawTerminalMarkers(r, coordsA, coordsB);
   });
+}
+
+// We don't yet track full/part-time service hours per route, so all
+// termini render filled for now — easy to extend later with a flag.
+// Expands common street-suffix abbreviations at word boundaries.
+// "St" is only expanded when NOT the first word (to avoid "St Raymond's" -> "Street Raymond's").
+// All other suffixes are safe to expand anywhere.
+function expandStreetAbbr(name) {
+  let out = name;
+  // St -> Street only when preceded by at least one word (i.e. it's a suffix, not a title like "Saint")
+  out = out.replace(/(?<=\S.*)\bSt\b/g, 'Street');
+  out = out.replace(/\bAve?\b/g,  'Avenue');
+  out = out.replace(/\bBlvd\b/g,  'Boulevard');
+  out = out.replace(/\bRd\b/g,    'Road');
+  out = out.replace(/\bPl\b/g,    'Place');
+  out = out.replace(/\bCres\b/g,  'Crescent');
+  out = out.replace(/\bPkwy\b/g,  'Parkway');
+  return out;
+}
+
+// Given a full destination string like "Morris Heights,Phelan Pl", returns
+// only the street part (after the last comma), with abbreviations expanded.
+// If there's no comma, returns the whole string expanded.
+function terminalStreetLabel(dest) {
+  if (!dest) return null;
+  const commaIdx = dest.lastIndexOf(',');
+  const street = commaIdx !== -1 ? dest.slice(commaIdx + 1).trim() : dest.trim();
+  return expandStreetAbbr(street);
+}
+
+function drawTerminalMarkers(r, coordsA, coordsB) {
+  const makeTerminal = (latlng, dest, side) => {
+    const street = terminalStreetLabel(dest);
+    const label = street
+      ? `<strong>${r.name}</strong> Side ${side} Terminal<br>${street}`
+      : `<strong>${r.name}</strong> Side ${side} Terminal`;
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:13px;height:13px;border-radius:50%;
+        background:${r.color};border:2.5px solid #fff;
+        box-shadow:0 0 0 1.5px ${r.color},0 2px 4px rgba(0,0,0,0.5);
+      "></div>`,
+      iconSize: [13,13], iconAnchor: [6.5,6.5],
+    });
+    return L.marker(latlng, { icon, zIndexOffset: 300, interactive: true })
+      .addTo(map)
+      .bindTooltip(label, { direction: 'top', offset:[0,-8] });
+  };
+  if (coordsA.length) r.terminalMarkers.push(makeTerminal(coordsA[coordsA.length-1], r.destA, 'A'));
+  if (coordsB.length) r.terminalMarkers.push(makeTerminal(coordsB[coordsB.length-1], r.destB, 'B'));
 }
 
 // Build a Set of "lat,lng" strings from Side A for quick lookup
@@ -2500,13 +2829,18 @@ function renderRouteList() {
   );
 
   function renderRouteCard(r) {
-    const fullName = buildFullRouteName(r);
+    const destText = buildRouteDestText(r);
+    const viaText  = buildRouteViaText(r);
+    const fullName = buildFullRouteName(r); // used for the title= tooltip only
     return `
     <div class="route-item" id="ri-${r.id}">
       <div class="route-header" onclick="toggleRouteBody(${r.id})">
         <div class="route-badge" style="background:${r.color};">${r.name}</div>
         <span class="tag ${r.type}" style="font-size:10px;">${r.type.toUpperCase()}</span>
-        <span class="route-name" title="${fullName}">${fullName}</span>
+        <div class="route-name-wrap" title="${fullName}">
+          <span class="route-name">${destText}</span>
+          ${viaText ? `<span class="route-via">${viaText}</span>` : ''}
+        </div>
         <span style="font-size:10px;color:var(--muted);">${(() => {
           const live = state.simRunning ? state.simBuses.filter(b => b.routeId === r.id).length : null;
           const n = live !== null ? live : (r.fleetList||[]).length;
@@ -2718,6 +3052,18 @@ function handleRouteMapPick(stopId) {
 // ════════════════════════════════════════════
 //  TABS
 // ════════════════════════════════════════════
+function togglePanel() {
+  const panel = document.getElementById('panel');
+  const tab = document.getElementById('panel-toggle-tab');
+  const hud = document.getElementById('speed-hud');
+  const legend = document.getElementById('legend-panel');
+  panel.classList.toggle('collapsed');
+  tab.classList.toggle('panel-is-collapsed');
+  if (hud) hud.classList.toggle('panel-is-collapsed');
+  if (legend) legend.classList.toggle('panel-is-collapsed');
+  setTimeout(() => map.invalidateSize(), 210); // let map fill the reclaimed space
+}
+
 function switchTab(name) {
   document.querySelectorAll('.panel-tab').forEach((t,i) => {
     t.classList.toggle('active', (i===0&&name==='stops')||(i===1&&name==='routes'));
@@ -2728,16 +3074,65 @@ function switchTab(name) {
 
 
 // ════════════════════════════════════════════
-//  BUS TOOLTIP BUILDER
+//  BUS TOOLTIP BUILDER  (cycling: Dest → [SVC TYPE] → Via 1 → Via 2 → repeat)
 // ════════════════════════════════════════════
-function buildBusTooltipHTML(bus) {
+
+// Renders one "frame" of the tooltip given a frame descriptor.
+// frame = { kind: 'dest'|'svc'|'via', ... }
+function renderBusTooltipFrame(bus, frame) {
   const r = state.routes.find(x => x.id === bus.routeId);
   const svcType = bus.serviceType || bus.type;
-  const svcLabel = svcType === 'sbs' ? 'SBS' : svcType === 'limited' ? 'LIMITED' : 'LOCAL';
+  const svcLabel = svcType === 'sbs' ? '+SBS' : svcType === 'limited' ? 'LIMITED' : 'LOCAL';
   const svcColor = svcType === 'sbs' ? '#3b82f6' : svcType === 'limited' ? '#f59e0b' : '#22c55e';
   const svcTextColor = svcType === 'sbs' ? '#fff' : '#000';
 
-  // Use the route's named destinations directly
+  const nameSpan = `<span style="font-size:14px;font-weight:800;color:#e8eaf0;">${bus.name}</span>`;
+  const dot = `<span style="font-size:13px;color:#3c3f52;">·</span>`;
+  const badge = `<span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:3px;background:${svcColor};color:${svcTextColor};line-height:1.8;white-space:nowrap;">${svcLabel}</span>`;
+
+  if (frame.kind === 'dest') {
+    // Split on first comma: "St Raymond's Cemetery, Throggs Neck"
+    const rawDest = frame.text || '—';
+    const commaIdx = rawDest.indexOf(',');
+    const hasSubtitle = commaIdx !== -1;
+    const mainDest = expandStreetAbbr((hasSubtitle ? rawDest.slice(0, commaIdx) : rawDest).trim()).toUpperCase();
+    const subDest  = hasSubtitle ? expandStreetAbbr(rawDest.slice(commaIdx + 1).trim()).toUpperCase() : null;
+
+    const destHTML = hasSubtitle
+      ? `<div style="text-align:center;line-height:1.25;">
+          <div style="font-size:13px;font-weight:800;color:#e8eaf0;">${mainDest}</div>
+          <div style="font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.03em;">${subDest}</div>
+         </div>`
+      : `<span style="font-size:13px;font-weight:800;color:#e8eaf0;">${mainDest}</span>`;
+
+    return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
+      ${nameSpan}${dot}${destHTML}${dot}${badge}
+    </div>`;
+  }
+
+  if (frame.kind === 'svc') {
+    // Dedicated frame just for the service type, e.g.
+    // "Bx47 · LIMITED" or "Bx49 · +SelectBusService"
+    return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
+      ${nameSpan}${dot}${badge}
+    </div>`;
+  }
+
+  // frame.kind === 'via'
+  return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
+    ${nameSpan}${dot}
+    <span style="font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:0.04em;">VIA</span>
+    <span style="font-size:13px;font-weight:800;color:#e8eaf0;">${expandStreetAbbr(frame.text || '').toUpperCase()}</span>
+    ${dot}${badge}
+  </div>`;
+}
+
+// Builds the ordered list of frames a bus tooltip cycles through:
+// Destination → [Service type, if Limited/SBS] → Via 1 → Via 2 → … → repeat
+function buildBusTooltipFrames(bus) {
+  const r = state.routes.find(x => x.id === bus.routeId);
+  const svcType = bus.serviceType || bus.type;
+
   let rawDest = '—';
   if (r) {
     const filterStops = pts => pts.filter(s => s.isWaypoint || (s.types && s.types.includes(svcType)));
@@ -2747,32 +3142,25 @@ function buildBusTooltipHTML(bus) {
     rawDest = (onSideA ? r.destA : r.destB) || '—';
   }
 
-  // Split on first comma: "St Raymond's Cemetery, Throggs Neck"
-  // → main = "ST RAYMOND'S CEMETERY", sub = "THROGGS NECK"
-  const commaIdx = rawDest.indexOf(',');
-  const hasSubtitle = commaIdx !== -1;
-  const mainDest = (hasSubtitle ? rawDest.slice(0, commaIdx) : rawDest).trim().toUpperCase();
-  const subDest  = hasSubtitle ? rawDest.slice(commaIdx + 1).trim().toUpperCase() : null;
+  const frames = [{ kind: 'dest', text: rawDest }];
 
-  const destHTML = hasSubtitle
-    ? `<div style="text-align:center;line-height:1.25;">
-        <div style="font-size:13px;font-weight:800;color:#e8eaf0;">${mainDest}</div>
-        <div style="font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.03em;">${subDest}</div>
-       </div>`
-    : `<span style="font-size:13px;font-weight:800;color:#e8eaf0;">${mainDest}</span>`;
+  // Badge is now always shown on every frame, so no dedicated svc frame needed.
+  if (r && r.vias && r.vias.length) {
+    r.vias.forEach(v => frames.push({ kind: 'via', text: v }));
+  }
 
-  return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
-    <span style="font-size:14px;font-weight:800;color:#e8eaf0;">${bus.name}</span>
-    <span style="font-size:13px;color:#3c3f52;">·</span>
-    ${destHTML}
-    <span style="font-size:13px;color:#3c3f52;">·</span>
-    <span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:3px;background:${svcColor};color:${svcTextColor};line-height:1.8;">${svcLabel}</span>
-  </div>`;
+  return frames;
 }
 
 function attachBusTooltip(bus) {
   bus.marker.unbindTooltip();
-  bus.marker.bindTooltip(() => buildBusTooltipHTML(bus), {
+  bus._tooltipFrameIdx = 0;
+
+  bus.marker.bindTooltip(() => {
+    const frames = buildBusTooltipFrames(bus);
+    const idx = (bus._tooltipFrameIdx || 0) % frames.length;
+    return renderBusTooltipFrame(bus, frames[idx]);
+  }, {
     permanent: false,
     direction: 'top',
     className: 'bus-rich-tooltip',
@@ -2780,12 +3168,32 @@ function attachBusTooltip(bus) {
     opacity: 1,
     interactive: false,
   });
-  // Re-open tooltip on mouseover so it always shows even during dwell
+
+  // Cycle through frames (dest → svc type → each via → repeat) while hovered
+  const CYCLE_MS = 2250;
+
   bus.marker.off('mouseover').on('mouseover', function() {
+    bus._tooltipFrameIdx = 0;
     this.openTooltip();
+    this.setTooltipContent(renderBusTooltipFrame(bus, buildBusTooltipFrames(bus)[0]));
+    if (bus._tooltipCycleInterval) clearInterval(bus._tooltipCycleInterval);
+    bus._tooltipCycleInterval = setInterval(() => {
+      const frames = buildBusTooltipFrames(bus);
+      if (frames.length <= 1) return; // nothing to cycle through
+      bus._tooltipFrameIdx = ((bus._tooltipFrameIdx || 0) + 1) % frames.length;
+      if (bus.marker.getTooltip()) {
+        bus.marker.setTooltipContent(renderBusTooltipFrame(bus, frames[bus._tooltipFrameIdx]));
+      }
+    }, CYCLE_MS);
   });
+
   bus.marker.off('mouseout').on('mouseout', function() {
     this.closeTooltip();
+    if (bus._tooltipCycleInterval) {
+      clearInterval(bus._tooltipCycleInterval);
+      bus._tooltipCycleInterval = null;
+    }
+    bus._tooltipFrameIdx = 0;
   });
 }
 
@@ -3027,7 +3435,10 @@ function stopSim() {
   state.simInterval = null;
   document.getElementById('sim-btn').textContent = '▶ Start Simulation';
   document.getElementById('sim-btn').classList.remove('running');
-  state.simBuses.forEach(b => { if (b.marker) map.removeLayer(b.marker); });
+  state.simBuses.forEach(b => {
+    if (b._tooltipCycleInterval) clearInterval(b._tooltipCycleInterval);
+    if (b.marker) map.removeLayer(b.marker);
+  });
   state.simBuses = [];
   state.routes.forEach(r => {
     r.fleetList = [];
@@ -3177,6 +3588,64 @@ const DEFAULT_COST_SETTINGS = {
   boardingsPerStopPerHour: 8,
   serviceHoursPerDay: 16,
 };
+
+function openLegend() {
+  renderLegendRouteList();
+  const panel = document.getElementById('legend-panel');
+  panel.classList.add('open');
+  // Match whatever collapsed state the side panel is currently in
+  if (document.getElementById('panel').classList.contains('collapsed')) {
+    panel.classList.add('panel-is-collapsed');
+  }
+}
+
+function closeLegend() {
+  document.getElementById('legend-panel').classList.remove('open');
+}
+
+function renderLegendRouteList() {
+  const el = document.getElementById('legend-route-list');
+  if (!state.routes.length) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted);">No routes yet.</div>';
+    return;
+  }
+  // Alphanumeric by route name
+  const sorted = [...state.routes].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  el.innerHTML = sorted.map(r => {
+    const hidden = !!r.hidden;
+    // Dark badge text for light/bright route colors, white text for dark colors
+    const textColor = isLightColor(r.color) ? '#000' : '#fff';
+    return `<div class="legend-route-row ${hidden?'hidden-route':''}" onclick="toggleRouteVisibility(${r.id}, ${!hidden})">
+      <input type="checkbox" ${hidden?'':'checked'} style="width:auto;margin:0;cursor:pointer;flex-shrink:0;"
+        onclick="event.stopPropagation();" onchange="toggleRouteVisibility(${r.id}, !this.checked)" />
+      <span class="legend-route-badge" style="background:${r.color};color:${textColor};">${r.name}</span>
+    </div>`;
+  }).join('');
+}
+
+// Quick luminance check so badge text stays legible on any route color
+function isLightColor(hex) {
+  if (!hex || hex[0] !== '#') return false;
+  const c = hex.length === 4
+    ? hex.slice(1).split('').map(ch => ch+ch).join('')
+    : hex.slice(1);
+  const r = parseInt(c.substr(0,2),16), g = parseInt(c.substr(2,2),16), b = parseInt(c.substr(4,2),16);
+  return (0.299*r + 0.587*g + 0.114*b) > 165;
+}
+
+function toggleRouteVisibility(routeId, hidden) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r) return;
+  r.hidden = hidden;
+  redrawRouteLines();
+  renderLegendRouteList();
+}
+
+function setAllRoutesVisibility(visible) {
+  state.routes.forEach(r => r.hidden = !visible);
+  redrawRouteLines();
+  renderLegendRouteList();
+}
 
 function openCostSettings() {
   const cs = state.costSettings;
