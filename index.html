@@ -2364,44 +2364,49 @@ function drawSideWithOffsets(r, coordsA, side, edgeUsage, edgeKey) {
 }
 
 function drawSideBWithBranching(r, coordsB, coordsA, edgeUsage, edgeKey) {
-  const aSet = new Set(coordsA.map(latLngKey));
+  // Build a set of EDGES (not just points) from Side A, so we can detect
+  // whether each consecutive pair in Side B is actually the same segment
+  // as in Side A — not just whether the individual points happen to appear
+  // in Side A somewhere. Point-based detection caused false shared/diverged
+  // transitions at waypoints reused across both sides, producing ghost lines.
+  const aEdgeSet = new Set();
+  for (let i = 0; i < coordsA.length - 1; i++) {
+    aEdgeSet.add(edgeKey(coordsA[i], coordsA[i+1]));
+  }
+
   const offsetCoordsB = applyEdgeOffsets(coordsB, r.id, edgeUsage, edgeKey);
 
-  // Walk coordsB, grouping consecutive points into "shared" vs "diverged" segments
-  // (use original coordsB for membership test, offsetCoordsB for drawing).
-  // Segments that match Side A are SKIPPED here — Side A already draws that
-  // exact stretch, so drawing it a second time as a translucent Side B copy
-  // on top of it just made shared stretches look thicker/highlighted.
+  // Walk coordsB edge by edge (i → i+1), grouping into shared vs diverged runs.
+  // A "shared" edge is one whose canonical key appears in Side A's edge set.
+  // Shared edges are skipped (Side A already draws them); diverged ones get a
+  // dashed polyline.
   let currentGroup = [];
-  let currentShared = aSet.has(latLngKey(coordsB[0]));
+  let currentShared = null;
 
   function flushGroup(isShared) {
     if (currentGroup.length < 2) return;
-    if (isShared) return; // already drawn by Side A — don't double-draw
+    if (isShared) return; // already drawn by Side A
     const poly = L.polyline(currentGroup, {
-      color: r.color,
-      weight: 3,
-      opacity: 0.85,
-      dashArray: '6,5',
+      color: r.color, weight: 3, opacity: 0.85, dashArray: '6,5',
     }).addTo(map).bindTooltip(() => buildRouteStatsTooltip(r, coordsA, coordsB), { sticky: true });
     r.polysB.push(poly);
   }
 
-  for (let i = 0; i < coordsB.length; i++) {
-    const pt = coordsB[i];
-    const offsetPt = offsetCoordsB[i];
-    const shared = aSet.has(latLngKey(pt));
+  for (let i = 0; i < coordsB.length - 1; i++) {
+    const shared = aEdgeSet.has(edgeKey(coordsB[i], coordsB[i+1]));
 
-    if (shared !== currentShared) {
-      // Flush previous group — carry over the boundary point to avoid gaps
-      if (currentGroup.length > 0) {
-        currentGroup.push(offsetPt); // add connecting point
-        flushGroup(currentShared);
-      }
-      currentGroup = [offsetPt];
+    if (currentShared === null) {
+      // First edge — start the first group with both endpoints
       currentShared = shared;
+      currentGroup = [offsetCoordsB[i], offsetCoordsB[i+1]];
+    } else if (shared === currentShared) {
+      // Same type as current run — extend
+      currentGroup.push(offsetCoordsB[i+1]);
     } else {
-      currentGroup.push(offsetPt);
+      // Transition — flush current group, start new one from the boundary point
+      flushGroup(currentShared);
+      currentGroup = [offsetCoordsB[i], offsetCoordsB[i+1]];
+      currentShared = shared;
     }
   }
   flushGroup(currentShared);
