@@ -499,15 +499,20 @@
   .bus-config label { margin: 0; white-space: nowrap; }
   .bus-config input { width: 50px; margin: 0; }
   .fleet-item {
-    display:flex;align-items:center;gap:5px;padding:4px 8px;
+    display:flex;flex-direction:column;gap:6px;padding:6px 8px;
     border-radius:5px;border:1px solid var(--border);
-    background:var(--bg);font-size:11px;
+    background:var(--bg);font-size:11px;margin-bottom:6px;
   }
+  .fleet-item-top { display:flex;align-items:center;gap:5px; }
   .fleet-item .fleet-label { flex:1; font-weight:600; color:var(--muted); }
   .fleet-type-btn {
     font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;
     border:1px solid transparent;cursor:pointer;transition:all 0.12s;
   }
+  .shortturn-row {
+    display:flex;gap:6px;padding-top:6px;border-top:1px dashed var(--border);
+  }
+  .shortturn-field { flex:1; min-width:0; }
 
   /* ── Empty states ── */
   .empty { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0; }
@@ -627,6 +632,22 @@
 </div>
 
 <!-- ══ NEW / EDIT ROUTE MODAL ══ -->
+<div class="modal-overlay" id="import-mode-modal">
+  <div class="modal-box" style="width:320px;">
+    <h2>📂 Import Routes</h2>
+    <div class="modal-sub">You already have stops/routes on the map. How should this file be imported?</div>
+    <button class="btn btn-accent btn-full" style="margin-bottom:8px;" onclick="confirmImportMode('merge')">
+      ➕ Merge — add to current map
+    </button>
+    <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;">Keeps everything you have now, appends the file's stops/routes with new IDs so nothing collides.</div>
+    <button class="btn btn-danger btn-full" style="margin-bottom:8px;" onclick="confirmImportMode('overwrite')">
+      🗑 Overwrite — replace everything
+    </button>
+    <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;">Clears the current map entirely and loads only what's in the file.</div>
+    <button class="btn btn-muted btn-full" onclick="document.getElementById('import-mode-modal').classList.remove('open'); window._pendingImportData=null;">Cancel</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="new-route-modal">
   <div class="modal-box">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -738,23 +759,6 @@
       </div>
     </div>
     <div id="legend-route-list"></div>
-  </div>
-</div>
-
-<!-- ══ IMPORT MODE MODAL ══ -->
-<div class="modal-overlay" id="import-mode-modal">
-  <div class="modal-box" style="width:320px;">
-    <h2>📂 Import Routes</h2>
-    <div class="modal-sub">You already have stops/routes on the map. How should this file be imported?</div>
-    <button class="btn btn-accent btn-full" style="margin-bottom:8px;" onclick="confirmImportMode('merge')">
-      ➕ Merge — add to current map
-    </button>
-    <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;">Keeps everything you have now, appends the file's stops/routes with new IDs so nothing collides.</div>
-    <button class="btn btn-danger btn-full" style="margin-bottom:8px;" onclick="confirmImportMode('overwrite')">
-      🗑 Overwrite — replace everything
-    </button>
-    <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;">Clears the current map entirely and loads only what's in the file.</div>
-    <button class="btn btn-muted btn-full" onclick="document.getElementById('import-mode-modal').classList.remove('open'); window._pendingImportData=null;">Cancel</button>
   </div>
 </div>
 
@@ -2093,7 +2097,6 @@ function deleteRoute(id) {
   if (r.polysA) r.polysA.forEach(p => map.removeLayer(p));
   if (r.polyB) map.removeLayer(r.polyB);
   if (r.polysB) r.polysB.forEach(p => map.removeLayer(p));
-  if (r.terminalMarkers) r.terminalMarkers.forEach(m => map.removeLayer(m));
   state.routes.splice(idx, 1);
   renderRouteList();
   setStatus(`🗑 Route "${r.name}" deleted`);
@@ -2336,18 +2339,68 @@ function buildFleetHTML(r) {
   }
   const TC = t => t==='sbs'?'#3b82f6':t==='limited'?'#f59e0b':'#22c55e';
   const TL = t => t==='sbs'?'SBS':t==='limited'?'Ltd':'Lcl';
+
+  // Pool of stops this bus could plausibly start/end at — every real stop
+  // (not waypoint) across both sides of the route, in path order.
+  const stopPool = [...r.sideA, ...r.sideB]
+    .map(id => state.stops.find(s => s.id === id))
+    .filter(s => s && !s.isWaypoint)
+    // de-dupe by id while preserving first-seen order
+    .filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i);
+
   return r.fleetList.map((b, i) => {
-    return `<div class="fleet-item">
-      <span class="fleet-label">Bus ${i+1}</span>
-      ${['local','limited','sbs'].map(t => {
-        const active = b.serviceType === t;
-        return `<button class="fleet-type-btn"
-          style="background:${active ? TC(t) : 'var(--surface)'};
-                 color:${active ? (t==='sbs'?'#fff':'#000') : 'var(--muted)'};
-                 border-color:${active ? TC(t) : 'var(--border)'};"
-          onclick="setBusServiceType(${r.id},${b.id},'${t}')">${TL(t)}</button>`;
-      }).join('')}
-      <button class="seq-remove" onclick="removeBus(${r.id},${b.id})">✕</button>
+    const hasShortTurn = (b.startStopId != null) || (b.endStopId != null);
+    const startOpts = stopPool.map(s =>
+      `<option value="${s.id}" ${b.startStopId===s.id?'selected':''}>${s.name}</option>`
+    ).join('');
+    const endOpts = stopPool.map(s =>
+      `<option value="${s.id}" ${b.endStopId===s.id?'selected':''}>${s.name}</option>`
+    ).join('');
+
+    return `<div class="fleet-item" style="${hasShortTurn?'border-color:#8b5cf6;':''}">
+      <div class="fleet-item-top">
+        <span class="fleet-label">Bus ${i+1}</span>
+        ${['local','limited','sbs'].map(t => {
+          const active = b.serviceType === t;
+          return `<button class="fleet-type-btn"
+            style="background:${active ? TC(t) : 'var(--surface)'};
+                   color:${active ? (t==='sbs'?'#fff':'#000') : 'var(--muted)'};
+                   border-color:${active ? TC(t) : 'var(--border)'};"
+            onclick="setBusServiceType(${r.id},${b.id},'${t}')">${TL(t)}</button>`;
+        }).join('')}
+        <button class="seq-remove" onclick="removeBus(${r.id},${b.id})">✕</button>
+      </div>
+
+      <div class="shortturn-row">
+        <div class="shortturn-field">
+          <label style="font-size:9px;text-transform:uppercase;letter-spacing:0.04em;color:${b.startStopId!=null?'#c4b5fd':'var(--muted)'};margin-bottom:2px;display:block;">Starts</label>
+          <select style="width:100%;font-size:10px;padding:3px 6px;margin:0;background:var(--surface);${b.startStopId!=null?'border-color:#8b5cf6;color:#c4b5fd;':''}"
+            onchange="setBusStartStop(${r.id},${b.id}, this.value === '' ? null : Number(this.value))">
+            <option value="">Full Route</option>
+            ${startOpts}
+          </select>
+        </div>
+        <div class="shortturn-field">
+          <label style="font-size:9px;text-transform:uppercase;letter-spacing:0.04em;color:${b.endStopId!=null?'#c4b5fd':'var(--muted)'};margin-bottom:2px;display:block;">Ends</label>
+          <select style="width:100%;font-size:10px;padding:3px 6px;margin:0;background:var(--surface);${b.endStopId!=null?'border-color:#8b5cf6;color:#c4b5fd;':''}"
+            onchange="setBusEndStop(${r.id},${b.id}, this.value === '' ? null : Number(this.value))">
+            <option value="">Full Route</option>
+            ${endOpts}
+          </select>
+        </div>
+      </div>
+
+      ${b.endStopId != null ? `
+      <div class="shortturn-row" style="border-top:none;padding-top:0;">
+        <div class="shortturn-field" style="flex:1;">
+          <label style="font-size:9px;text-transform:uppercase;letter-spacing:0.04em;color:#8b5cf6;margin-bottom:2px;display:flex;align-items:center;gap:5px;">
+            ✏️ Display Text <span style="font-size:8px;font-weight:800;padding:1px 5px;border-radius:3px;background:#4b5563;color:#d1d5db;">optional</span>
+          </label>
+          <input type="text" value="${b.displayDest || ''}" placeholder="Leave blank to use stop name"
+            style="width:100%;font-size:10px;padding:3px 6px;margin:0;background:var(--surface);${b.displayDest?'border-color:#8b5cf6;color:#c4b5fd;':''}"
+            onchange="setBusDisplayDest(${r.id},${b.id}, this.value)" />
+        </div>
+      </div>` : ''}
     </div>`;
   }).join('');
 }
@@ -2358,14 +2411,14 @@ function spawnBus(routeId, serviceType='local') {
   if (!r.fleetList) r.fleetList = [];
   if (!r.fleetIdCounter) r.fleetIdCounter = r.fleetList.length;
   r.fleetIdCounter++;
-  const busConfig = { id: r.fleetIdCounter, serviceType: serviceType || r.type };
+  const busConfig = { id: r.fleetIdCounter, serviceType: serviceType || r.type, startStopId: null, endStopId: null, displayDest: '' };
   r.fleetList.push(busConfig);
   rerenderRouteBody(routeId);
 
   // If simulation is running, immediately add a live bus starting at position 0
   if (state.simRunning) {
     const svcType = busConfig.serviceType || r.type;
-    const loopData = buildBusLoop(r, svcType);
+    const loopData = buildBusLoop(r, svcType, busConfig);
     if (loopData) {
       const { fullLoop, segDistances } = loopData;
       const startPt = fullLoop[0];
@@ -2411,6 +2464,31 @@ function setBusServiceType(routeId, busId, type) {
   if (!r || !r.fleetList) return;
   const b = r.fleetList.find(x => x.id === busId);
   if (b) { b.serviceType = type; rerenderRouteBody(routeId); }
+}
+
+function setBusStartStop(routeId, busId, stopId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (b) { b.startStopId = stopId; rerenderRouteBody(routeId); }
+}
+
+function setBusEndStop(routeId, busId, stopId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (b) {
+    b.endStopId = stopId;
+    if (stopId == null) b.displayDest = ''; // clear override if short-turn is removed
+    rerenderRouteBody(routeId);
+  }
+}
+
+function setBusDisplayDest(routeId, busId, text) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (b) { b.displayDest = text; rerenderRouteBody(routeId); }
 }
 
 // ════════════════════════════════════════════
@@ -3108,6 +3186,13 @@ function renderBusTooltipFrame(bus, frame) {
   const dot = `<span style="font-size:13px;color:#3c3f52;">·</span>`;
   const badge = `<span style="font-size:11px;font-weight:800;padding:2px 8px;border-radius:3px;background:${svcColor};color:${svcTextColor};line-height:1.8;white-space:nowrap;">${svcLabel}</span>`;
 
+  if (frame.kind === 'nis') {
+    return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
+      ${nameSpan}${dot}
+      <span style="font-size:13px;font-weight:800;color:#9ca3af;letter-spacing:0.04em;">NOT IN SERVICE</span>
+    </div>`;
+  }
+
   if (frame.kind === 'dest') {
     // Split on first comma: "St Raymond's Cemetery, Throggs Neck"
     const rawDest = frame.text || '—';
@@ -3148,11 +3233,22 @@ function renderBusTooltipFrame(bus, frame) {
 // Builds the ordered list of frames a bus tooltip cycles through:
 // Destination → [Service type, if Limited/SBS] → Via 1 → Via 2 → … → repeat
 function buildBusTooltipFrames(bus) {
+  // Not In Service buses show a single dedicated frame, no cycling.
+  if (bus.notInService) {
+    return [{ kind: 'nis' }];
+  }
+
   const r = state.routes.find(x => x.id === bus.routeId);
   const svcType = bus.serviceType || bus.type;
 
   let rawDest = '—';
-  if (r) {
+  // A short-turning bus heading toward its custom early end shows the
+  // display override (or the real stop name) instead of the route's
+  // normal Side A/B destination.
+  if (bus.willEndShort && bus.endStopId != null) {
+    const endStop = state.stops.find(s => s.id === bus.endStopId);
+    rawDest = bus.displayDest || (endStop ? endStop.name : '—');
+  } else if (r) {
     const filterStops = pts => pts.filter(s => s.isWaypoint || (s.types && s.types.includes(svcType)));
     const stopsA = filterStops(r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
     const loopMid = stopsA.length;
@@ -3224,7 +3320,7 @@ function toggleSim() {
 
 // ── helpers used by both startSim and spawnBus ──────────────────────────
 
-function buildBusLoop(r, svcType) {
+function buildBusLoop(r, svcType, busConfig) {
   const filterPts = pts => pts.filter(s => s.isWaypoint || (s.types && s.types.includes(svcType)));
   let pointsA = filterPts(r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
   let pointsB = filterPts(r.sideB.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
@@ -3238,8 +3334,26 @@ function buildBusLoop(r, svcType) {
   }
 
   if (pointsA.length < 2 && pointsB.length < 2) return null;
-  const fullLoop = buildLoopSequence(pointsA, pointsB);
+  let fullLoop = buildLoopSequence(pointsA, pointsB);
   if (fullLoop.length < 2) return null;
+
+  // Short-turn trimming: if this bus has a custom start/end stop, slice the
+  // loop down to just that window. Both ends are independent and optional.
+  let startIdx = 0;
+  let endIdx = fullLoop.length - 1;
+  if (busConfig && busConfig.startStopId != null) {
+    const idx = fullLoop.findIndex(s => s.id === busConfig.startStopId);
+    if (idx !== -1) startIdx = idx;
+  }
+  if (busConfig && busConfig.endStopId != null) {
+    const idx = fullLoop.findIndex(s => s.id === busConfig.endStopId);
+    if (idx !== -1 && idx > startIdx) endIdx = idx;
+  }
+  if (startIdx > 0 || endIdx < fullLoop.length - 1) {
+    fullLoop = fullLoop.slice(startIdx, endIdx + 1);
+    if (fullLoop.length < 2) return null;
+  }
+
   const segDistances = [];
   for (let k = 0; k < fullLoop.length - 1; k++) {
     const p1 = fullLoop[k], p2 = fullLoop[k+1];
@@ -3264,6 +3378,23 @@ function makeBusMarker(r, svcType) {
     iconSize: [18,18], iconAnchor: [9,9],
   });
   return { bgColor, icon };
+}
+
+// Dim grey marker shown while a short-turn bus is parked Not In Service,
+// either before it begins its run (short-origin) or after it ends one early.
+function makeNotInServiceMarker() {
+  return L.divIcon({
+    className: '',
+    html: `<div style="
+      min-width:18px;height:18px;border-radius:4px;padding:0 3px;
+      background:#4b5563;border:2px solid #9ca3af;
+      display:flex;align-items:center;justify-content:center;
+      font-size:7px;font-weight:900;color:#d1d5db;
+      box-shadow:0 2px 6px rgba(0,0,0,0.7);white-space:nowrap;
+      opacity:0.85;
+    ">N/S</div>`,
+    iconSize: [18,18], iconAnchor: [9,9],
+  });
 }
 
 // Estimate total loop travel time in ticks at current speedMult
@@ -3305,13 +3436,20 @@ function startSim() {
 
     fleet.forEach((busConfig, i) => {
       const svcType = busConfig.serviceType || r.type;
-      const loopData = buildBusLoop(r, svcType);
+      const loopData = buildBusLoop(r, svcType, busConfig);
       if (!loopData) return;
 
       const { fullLoop, segDistances } = loopData;
-      const startPt = fullLoop[0]; // always start at the very first point of Side A
+      const isShortStart = busConfig.startStopId != null && fullLoop[0] && fullLoop[0].id === busConfig.startStopId;
+      const isShortEnd   = busConfig.endStopId   != null;
+
+      // Short-origin buses begin parked + Not In Service at their custom start;
+      // everyone else begins normally at the front of the loop.
+      const startNIS = isShortStart;
+      const startPt = fullLoop[0];
 
       const { bgColor, icon } = makeBusMarker(r, svcType);
+      const nisIcon = makeNotInServiceMarker();
 
       // Stagger buses using time-based delays so they are evenly headway-spaced.
       // Bus 0 departs immediately; bus i waits (i / totalBuses) of the full loop duration.
@@ -3332,10 +3470,17 @@ function startSim() {
         t:              0,
         dwellRemaining: 0,
         delayRemaining: delayTicks, // ticks to wait before departing
+        notInService:   startNIS,
+        nisRemaining:   startNIS ? 1800 : 0,   // ms parked as NIS before flipping active
+        willEndShort:   isShortEnd,
+        endStopId:      busConfig.endStopId ?? null,
+        displayDest:    busConfig.displayDest || '',
+        pendingDespawn: false,
+        icon, nisIcon,
         marker: (() => {
             const marker = L.marker(
             [startPt.lat, startPt.lng],
-            { icon, zIndexOffset: 500, interactive: true }
+            { icon: startNIS ? nisIcon : icon, zIndexOffset: 500, interactive: true }
             );
 
         if (delayTicks === 0) {
@@ -3386,6 +3531,48 @@ function startSim() {
           }
           return;
         }
+
+      // Short-origin buses: parked Not In Service before their run begins.
+      // Once the NIS dwell expires, flip to the active route-colored marker
+      // and let normal movement begin from this same position.
+      if (bus.notInService && !bus.pendingDespawn) {
+        bus.nisRemaining -= TICK;
+        if (bus.nisRemaining <= 0) {
+          bus.notInService = false;
+          try { bus.marker.setIcon(bus.icon); } catch(e) {}
+          attachBusTooltip(bus); // refresh so it shows the active route tooltip now
+        }
+        return;
+      }
+
+      // Short-turn buses that just reached their custom end stop: flip to
+      // Not In Service, dwell briefly, then fade out and despawn instead of looping.
+      if (bus.pendingDespawn) {
+        bus.nisRemaining -= TICK;
+        if (bus.nisRemaining <= 0 && !bus.fadingOut) {
+          bus.fadingOut = true;
+          try {
+            let frame = 0;
+            const FADE_STEPS = 12;
+            const fadeTimer = setInterval(() => {
+              frame++;
+              try {
+                bus.marker.setOpacity(Math.max(0, 1 - frame / FADE_STEPS));
+              } catch (e) { clearInterval(fadeTimer); }
+              if (frame >= FADE_STEPS) {
+                clearInterval(fadeTimer);
+                try { map.removeLayer(bus.marker); } catch(e) {}
+                bus._removed = true;
+              }
+            }, TICK);
+          } catch (e) {
+            try { map.removeLayer(bus.marker); } catch(e2) {}
+            bus._removed = true;
+          }
+        }
+        return;
+      }
+
       // Dwell at a stop
       if (bus.dwellRemaining > 0) {
         bus.dwellRemaining -= TICK;
@@ -3400,9 +3587,30 @@ function startSim() {
           remaining = 0;
         } else {
           remaining -= remainingInSeg;
-          bus.segIdx = (bus.segIdx + 1) % (bus.loopLen - 1);
+          const nextIdx = bus.segIdx + 1;
+          const nextStop = bus.loop[nextIdx];
+
+          // Reached the custom early-end stop — go Not In Service and begin
+          // the despawn countdown, BEFORE wrapping segIdx back toward index 0.
+          // Checking this first avoids the marker ever snapping back to the
+          // route's start, since we never advance segIdx past the end stop.
+          if (bus.willEndShort && nextStop && nextStop.id === bus.endStopId) {
+            bus.segIdx = nextIdx;
+            bus.t = 0;
+            bus.notInService = true;
+            bus.pendingDespawn = true;
+            bus.nisRemaining = 1800; // ms parked NIS before fading out
+            try { bus.marker.setIcon(bus.nisIcon); } catch(e) {}
+            try { bus.marker.setLatLng([nextStop.lat, nextStop.lng]); } catch(e) {}
+            attachBusTooltip(bus);
+            remaining = 0;
+            break;
+          }
+
+          bus.segIdx = nextIdx % (bus.loopLen - 1);
           bus.t = 0;
           const arrivedAt = bus.loop[bus.segIdx];
+
           if (arrivedAt && !arrivedAt.isWaypoint) {
             bus.dwellRemaining = DWELL_MS;
             remaining = 0;
@@ -3418,6 +3626,8 @@ function startSim() {
       const lng = a.lng + (b.lng - a.lng) * bus.t;
       bus.marker.setLatLng([lat, lng]);
     });
+    // Sweep out any buses that finished their despawn dwell this tick
+    state.simBuses = state.simBuses.filter(b => !b._removed);
   }, TICK);
 
   setStatus('▶ Simulation running — buses depart from Side A start with even headways!');
@@ -3544,6 +3754,18 @@ function confirmImportMode(mode) {
   if (data) applyLoadedData(data, mode);
 }
 
+// Normalizes a raw fleet bus object from a save file, filling in any fields
+// that didn't exist in older saves (service type defaults, short-turn fields).
+function normalizeFleetBus(b, routeType) {
+  return {
+    id: b.id,
+    serviceType: b.serviceType || routeType,
+    startStopId: b.startStopId ?? null,
+    endStopId: b.endStopId ?? null,
+    displayDest: b.displayDest || '',
+  };
+}
+
 function applyLoadedData(data, mode) {
   mode = mode || 'overwrite';
 
@@ -3577,7 +3799,8 @@ function applyLoadedData(data, mode) {
       destA: r.destA || '', destB: r.destB || '', vias: r.vias || [],
       depotId: r.depotId || null,
       type: r.type, color: r.color, buses: r.buses || 0,
-      fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
+      fleetList: (r.fleetList || []).map(b => normalizeFleetBus(b, r.type)),
+      fleetIdCounter: r.fleetIdCounter || 0,
       sideA: r.sideA || [], sideB: r.sideB || [],
       polyA: null, polysA: [], polyB: null, polysB: [], terminalMarkers: [],
       activeSide: r.activeSide || 'A', hidden: !!r.hidden,
@@ -3618,7 +3841,14 @@ function applyLoadedData(data, mode) {
         destA: r.destA || '', destB: r.destB || '', vias: r.vias || [],
         depotId: r.depotId != null ? (depotIdMap[r.depotId] ?? null) : null,
         type: r.type, color: r.color, buses: r.buses || 0,
-        fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
+        fleetList: (r.fleetList || []).map(b => {
+          const nb = normalizeFleetBus(b, r.type);
+          // Remap short-turn stop references to the new stop ids from this merge
+          if (nb.startStopId != null) nb.startStopId = stopIdMap[nb.startStopId] ?? nb.startStopId;
+          if (nb.endStopId   != null) nb.endStopId   = stopIdMap[nb.endStopId]   ?? nb.endStopId;
+          return nb;
+        }),
+        fleetIdCounter: r.fleetIdCounter || 0,
         sideA: (r.sideA || []).map(id => stopIdMap[id] ?? id),
         sideB: (r.sideB || []).map(id => stopIdMap[id] ?? id),
         polyA: null, polysA: [], polyB: null, polysB: [], terminalMarkers: [],
