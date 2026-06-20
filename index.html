@@ -741,6 +741,23 @@
   </div>
 </div>
 
+<!-- ══ IMPORT MODE MODAL ══ -->
+<div class="modal-overlay" id="import-mode-modal">
+  <div class="modal-box" style="width:320px;">
+    <h2>📂 Import Routes</h2>
+    <div class="modal-sub">You already have stops/routes on the map. How should this file be imported?</div>
+    <button class="btn btn-accent btn-full" style="margin-bottom:8px;" onclick="confirmImportMode('merge')">
+      ➕ Merge — add to current map
+    </button>
+    <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;">Keeps everything you have now, appends the file's stops/routes with new IDs so nothing collides.</div>
+    <button class="btn btn-danger btn-full" style="margin-bottom:8px;" onclick="confirmImportMode('overwrite')">
+      🗑 Overwrite — replace everything
+    </button>
+    <div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;">Clears the current map entirely and loads only what's in the file.</div>
+    <button class="btn btn-muted btn-full" onclick="document.getElementById('import-mode-modal').classList.remove('open'); window._pendingImportData=null;">Cancel</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="cost-settings-modal">
   <div class="modal-box">
     <h2>⚙️ Cost &amp; Ridership Settings</h2>
@@ -2076,6 +2093,7 @@ function deleteRoute(id) {
   if (r.polysA) r.polysA.forEach(p => map.removeLayer(p));
   if (r.polyB) map.removeLayer(r.polyB);
   if (r.polysB) r.polysB.forEach(p => map.removeLayer(p));
+  if (r.terminalMarkers) r.terminalMarkers.forEach(m => map.removeLayer(m));
   state.routes.splice(idx, 1);
   renderRouteList();
   setStatus(`🗑 Route "${r.name}" deleted`);
@@ -3095,8 +3113,8 @@ function renderBusTooltipFrame(bus, frame) {
     const rawDest = frame.text || '—';
     const commaIdx = rawDest.indexOf(',');
     const hasSubtitle = commaIdx !== -1;
-    const mainDest = expandStreetAbbr((hasSubtitle ? rawDest.slice(0, commaIdx) : rawDest).trim()).toUpperCase();
-    const subDest  = hasSubtitle ? expandStreetAbbr(rawDest.slice(commaIdx + 1).trim()).toUpperCase() : null;
+    const mainDest = (hasSubtitle ? rawDest.slice(0, commaIdx) : rawDest).trim().toUpperCase();
+    const subDest  = hasSubtitle ? rawDest.slice(commaIdx + 1).trim().toUpperCase() : null;
 
     const destHTML = hasSubtitle
       ? `<div style="text-align:center;line-height:1.25;">
@@ -3122,7 +3140,7 @@ function renderBusTooltipFrame(bus, frame) {
   return `<div style="font-family:'Segoe UI',sans-serif;white-space:nowrap;display:flex;align-items:center;gap:8px;padding:2px 0;">
     ${nameSpan}${dot}
     <span style="font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:0.04em;">VIA</span>
-    <span style="font-size:13px;font-weight:800;color:#e8eaf0;">${expandStreetAbbr(frame.text || '').toUpperCase()}</span>
+    <span style="font-size:13px;font-weight:800;color:#e8eaf0;">${(frame.text || '').toUpperCase()}</span>
     ${dot}${badge}
   </div>`;
 }
@@ -3498,7 +3516,19 @@ function loadFromFile(event) {
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      applyLoadedData(data);
+      if (!data || !Array.isArray(data.stops) || !Array.isArray(data.routes)) {
+        alert('That file doesn\'t look like a valid bus routes save.');
+        event.target.value = '';
+        return;
+      }
+      // Nothing on the map yet — overwrite vs merge is a moot question
+      if (!state.stops.length && !state.routes.length) {
+        applyLoadedData(data, 'overwrite');
+        event.target.value = '';
+        return;
+      }
+      window._pendingImportData = data;
+      document.getElementById('import-mode-modal').classList.add('open');
     } catch (err) {
       alert('Could not load file: ' + err.message);
     }
@@ -3507,55 +3537,97 @@ function loadFromFile(event) {
   reader.readAsText(file);
 }
 
-function applyLoadedData(data) {
-  if (!data || !Array.isArray(data.stops) || !Array.isArray(data.routes)) {
-    alert('That file doesn\'t look like a valid bus routes save.');
-    return;
-  }
+function confirmImportMode(mode) {
+  document.getElementById('import-mode-modal').classList.remove('open');
+  const data = window._pendingImportData;
+  window._pendingImportData = null;
+  if (data) applyLoadedData(data, mode);
+}
 
-  // Stop simulation if running
+function applyLoadedData(data, mode) {
+  mode = mode || 'overwrite';
+
+  // Stop simulation if running — either mode invalidates current bus markers
   if (state.simRunning) stopSim();
 
-  // Remove existing markers and route lines
-  state.stops.forEach(s => { if (s.marker) map.removeLayer(s.marker); });
-  state.routes.forEach(r => {
-    if (r.polyA) map.removeLayer(r.polyA);
-    if (r.polysA) r.polysA.forEach(p => map.removeLayer(p));
-    if (r.polyB) map.removeLayer(r.polyB);
-    if (r.polysB) r.polysB.forEach(p => map.removeLayer(p));
-  });
+  if (mode === 'overwrite') {
+    // Remove every existing layer before rebuilding from scratch
+    state.stops.forEach(s => { if (s.marker) map.removeLayer(s.marker); });
+    state.routes.forEach(r => {
+      if (r.polyA) map.removeLayer(r.polyA);
+      if (r.polysA) r.polysA.forEach(p => map.removeLayer(p));
+      if (r.polyB) map.removeLayer(r.polyB);
+      if (r.polysB) r.polysB.forEach(p => map.removeLayer(p));
+      if (r.terminalMarkers) r.terminalMarkers.forEach(m => map.removeLayer(m));
+    });
 
-  // Rebuild stops
-  state.stops = data.stops.map(s => {
-    const stop = {
-      id: s.id, name: s.name, lat: s.lat, lng: s.lng,
-      types: s.types || ['local'], marker: null, isWaypoint: !!s.isWaypoint,
-    };
-    createStopMarker(stop);
-    return stop;
-  });
+    state.stops = data.stops.map(s => {
+      const stop = {
+        id: s.id, name: s.name, lat: s.lat, lng: s.lng,
+        types: s.types || ['local'], marker: null, isWaypoint: !!s.isWaypoint,
+      };
+      createStopMarker(stop);
+      return stop;
+    });
 
-  // Rebuild depots
-  state.depots = (data.depots || []).map(d => ({ id: d.id, name: d.name }));
+    state.depots = (data.depots || []).map(d => ({ id: d.id, name: d.name }));
 
-  // Rebuild routes
-  state.routes = data.routes.map(r => ({
-    id: r.id, name: r.name,
-    destA: r.destA || '', destB: r.destB || '', vias: r.vias || [],
-    depotId: r.depotId || null,
-    type: r.type, color: r.color, buses: r.buses || 0,
-    fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
-    sideA: r.sideA || [], sideB: r.sideB || [],
-    polyA: null, polysA: [], polyB: null, polysB: [],
-    activeSide: r.activeSide || 'A',
-  }));
+    state.routes = data.routes.map(r => ({
+      id: r.id, name: r.name,
+      destA: r.destA || '', destB: r.destB || '', vias: r.vias || [],
+      depotId: r.depotId || null,
+      type: r.type, color: r.color, buses: r.buses || 0,
+      fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
+      sideA: r.sideA || [], sideB: r.sideB || [],
+      polyA: null, polysA: [], polyB: null, polysB: [], terminalMarkers: [],
+      activeSide: r.activeSide || 'A', hidden: !!r.hidden,
+    }));
 
-  state.stopIdCounter = data.stopIdCounter || Math.max(0, ...state.stops.map(s => s.id), 0);
-  state.routeIdCounter = data.routeIdCounter || Math.max(0, ...state.routes.map(r => r.id), 0);
-  state.depotIdCounter = data.depotIdCounter || Math.max(0, ...state.depots.map(d => d.id), 0);
+    state.stopIdCounter  = data.stopIdCounter  || Math.max(0, ...state.stops.map(s => s.id), 0);
+    state.routeIdCounter = data.routeIdCounter || Math.max(0, ...state.routes.map(r => r.id), 0);
+    state.depotIdCounter = data.depotIdCounter || Math.max(0, ...state.depots.map(d => d.id), 0);
+    state.costSettings = { ...DEFAULT_COST_SETTINGS, ...(data.costSettings || {}) };
 
-  // Restore cost settings if present (older saves won't have this — fall back to defaults)
-  state.costSettings = { ...DEFAULT_COST_SETTINGS, ...(data.costSettings || {}) };
+  } else {
+    // MERGE: keep everything currently on the map, append the imported
+    // stops/waypoints/depots/routes with fresh ids so nothing collides.
+    const stopIdMap = {};
+    const importedStops = data.stops.map(s => {
+      const newId = ++state.stopIdCounter;
+      stopIdMap[s.id] = newId;
+      const stop = {
+        id: newId, name: s.name, lat: s.lat, lng: s.lng,
+        types: s.types || ['local'], marker: null, isWaypoint: !!s.isWaypoint,
+      };
+      createStopMarker(stop);
+      return stop;
+    });
+    state.stops.push(...importedStops);
+
+    const depotIdMap = {};
+    (data.depots || []).forEach(d => {
+      const newId = ++state.depotIdCounter;
+      depotIdMap[d.id] = newId;
+      state.depots.push({ id: newId, name: d.name });
+    });
+
+    const importedRoutes = data.routes.map(r => {
+      const newId = ++state.routeIdCounter;
+      return {
+        id: newId, name: r.name,
+        destA: r.destA || '', destB: r.destB || '', vias: r.vias || [],
+        depotId: r.depotId != null ? (depotIdMap[r.depotId] ?? null) : null,
+        type: r.type, color: r.color, buses: r.buses || 0,
+        fleetList: r.fleetList || [], fleetIdCounter: r.fleetIdCounter || 0,
+        sideA: (r.sideA || []).map(id => stopIdMap[id] ?? id),
+        sideB: (r.sideB || []).map(id => stopIdMap[id] ?? id),
+        polyA: null, polysA: [], polyB: null, polysB: [], terminalMarkers: [],
+        activeSide: r.activeSide || 'A', hidden: !!r.hidden,
+      };
+    });
+    state.routes.push(...importedRoutes);
+    // Cost settings: keep current ones in a merge — importing shouldn't silently change your rates
+  }
 
   // Clear any in-progress UI selections
   window._multiAddOrder = {};
@@ -3573,7 +3645,8 @@ function applyLoadedData(data) {
     map.fitBounds(bounds, { padding: [40, 40] });
   }
 
-  setStatus(`📂 Loaded ${state.stops.length} stops/waypoints and ${state.routes.length} routes`);
+  const verb = mode === 'overwrite' ? 'Loaded' : 'Merged in';
+  setStatus(`📂 ${verb} ${data.stops.length} stops/waypoints and ${data.routes.length} routes`);
 }
 
 
