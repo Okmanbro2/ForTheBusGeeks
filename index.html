@@ -514,6 +514,32 @@
   }
   .shortturn-field { flex:1; min-width:0; }
 
+  .leadin-block {
+    padding-top: 6px; margin-top: 2px;
+    border-top: 1px dashed #8b5cf6;
+  }
+  .leadin-chain {
+    display: flex; flex-direction: column; gap: 3px;
+    margin-bottom: 6px; padding: 5px;
+    background: var(--surface); border-radius: 5px;
+    border: 1px dashed #8b5cf6;
+  }
+  .leadin-step {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; padding: 1px 2px;
+  }
+  .leadin-step-num {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #8b5cf6; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 8px; font-weight: 800; flex-shrink: 0;
+  }
+  .leadin-step-name { flex: 1; color: var(--text); }
+  .leadin-join {
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    padding: 2px 4px; margin-bottom: 2px;
+  }
+
   /* ── Empty states ── */
   .empty { text-align: center; color: var(--muted); font-size: 12px; padding: 24px 0; }
 
@@ -973,6 +999,17 @@ function removeStopById(id, { stripFromRoutes = true } = {}) {
     state.routes.forEach(r => {
       r.sideA = r.sideA.filter(sid => sid !== id);
       r.sideB = r.sideB.filter(sid => sid !== id);
+      // Also clean up any bus referencing this stop as a short-turn point
+      // or as part of its private lead-in chain.
+      if (r.fleetList) {
+        r.fleetList.forEach(b => {
+          if (b.startStopId === id) b.startStopId = null;
+          if (b.endStopId === id) { b.endStopId = null; b.displayDest = ''; }
+          if (b.leadInPath && b.leadInPath.length) {
+            b.leadInPath = b.leadInPath.filter(sid => sid !== id);
+          }
+        });
+      }
     });
   }
   return stop;
@@ -1021,6 +1058,14 @@ window._routePickMode = {
   active: false,
   routeId: null,
   side: null
+};
+// Parallel pick/draw target for bus lead-in authoring. When set, clicks on
+// existing stops AND newly-drawn points are routed here instead of to the
+// route's Side A/B — the two systems never run at the same time.
+window._leadInTarget = {
+  active: false,
+  routeId: null,
+  busId: null,
 };
 
 // ════════════════════════════════════════════
@@ -1338,19 +1383,35 @@ function finishDrawing() {
     createdSnapshots.push(snapshotStop(stop));
   });
 
-  // If a route is currently open (its body panel expanded), append the drawn
-  // sequence to that route's active side. Otherwise the points just land in
-  // the global stop/waypoint list for manual assignment later.
-  const openRouteEl = document.querySelector('.route-body.open');
+  // Lead-in authoring takes priority: if active, drawn points go straight
+  // into that bus's private lead-in chain instead of a route side.
+  const leadIn = window._leadInTarget;
   let targetRouteId = null, targetSide = null, insertedAt = null;
-  if (openRouteEl) {
-    targetRouteId = parseInt(openRouteEl.id.replace('rb-', ''));
-    const r = state.routes.find(x => x.id === targetRouteId);
-    if (r) {
-      targetSide = r.activeSide;
-      const arr = targetSide === 'A' ? r.sideA : r.sideB;
-      insertedAt = arr.length;
-      arr.push(...createdStops.map(s => s.id));
+  let leadInRouteId = null, leadInBusId = null;
+
+  if (leadIn.active) {
+    leadInRouteId = leadIn.routeId;
+    leadInBusId = leadIn.busId;
+    const r = state.routes.find(x => x.id === leadInRouteId);
+    const b = r && r.fleetList && r.fleetList.find(x => x.id === leadInBusId);
+    if (b) {
+      if (!b.leadInPath) b.leadInPath = [];
+      b.leadInPath.push(...createdStops.map(s => s.id));
+    }
+  } else {
+    // Otherwise, if a route is currently open (its body panel expanded),
+    // append the drawn sequence to that route's active side. If no route is
+    // open, the points just land in the global stop/waypoint list.
+    const openRouteEl = document.querySelector('.route-body.open');
+    if (openRouteEl) {
+      targetRouteId = parseInt(openRouteEl.id.replace('rb-', ''));
+      const r = state.routes.find(x => x.id === targetRouteId);
+      if (r) {
+        targetSide = r.activeSide;
+        const arr = targetSide === 'A' ? r.sideA : r.sideB;
+        insertedAt = arr.length;
+        arr.push(...createdStops.map(s => s.id));
+      }
     }
   }
 
@@ -1362,6 +1423,10 @@ function finishDrawing() {
   document.getElementById('draw-controls').style.display = 'none';
   window._drawState = null;
 
+  // Exit lead-in pick mode once the drawing is committed — drawing is a
+  // one-shot action for the lead-in, not a persistent mode like route picking.
+  if (leadIn.active) stopLeadInPick(leadInRouteId);
+
   redrawRouteLines();
   renderStopList();
   renderRouteList();
@@ -1369,7 +1434,10 @@ function finishDrawing() {
 
   const stopCount = createdStops.filter(s => !s.isWaypoint).length;
   const wpCount = createdStops.length - stopCount;
-  setStatus(`✏️ Drew ${createdStops.length} point(s) — ${stopCount} stop(s), ${wpCount} waypoint(s)${targetRouteId ? ` and added to route` : ''}`);
+  const destNote = leadInRouteId !== null
+    ? ' and added to bus lead-in path'
+    : (targetRouteId ? ' and added to route' : '');
+  setStatus(`✏️ Drew ${createdStops.length} point(s) — ${stopCount} stop(s), ${wpCount} waypoint(s)${destNote}`);
 
   // Single undo step for the whole drawn batch
   pushUndo({
@@ -1386,6 +1454,16 @@ function finishDrawing() {
           });
         }
       }
+      if (leadInRouteId !== null) {
+        const r = state.routes.find(x => x.id === leadInRouteId);
+        const b = r && r.fleetList && r.fleetList.find(x => x.id === leadInBusId);
+        if (b && b.leadInPath) {
+          createdSnapshots.forEach(snap => {
+            const i = b.leadInPath.indexOf(snap.id);
+            if (i !== -1) b.leadInPath.splice(i, 1);
+          });
+        }
+      }
       redrawRouteLines(); renderStopList(); renderRouteList();
     },
     redo() {
@@ -1395,6 +1473,14 @@ function finishDrawing() {
         if (r) {
           const arr = targetSide === 'A' ? r.sideA : r.sideB;
           arr.push(...createdSnapshots.map(s => s.id));
+        }
+      }
+      if (leadInRouteId !== null) {
+        const r = state.routes.find(x => x.id === leadInRouteId);
+        const b = r && r.fleetList && r.fleetList.find(x => x.id === leadInBusId);
+        if (b) {
+          if (!b.leadInPath) b.leadInPath = [];
+          b.leadInPath.push(...createdSnapshots.map(s => s.id));
         }
       }
       redrawRouteLines(); renderStopList(); renderRouteList();
@@ -2390,6 +2476,8 @@ function buildFleetHTML(r) {
         </div>
       </div>
 
+      ${b.startStopId != null ? buildLeadInHTML(r, b) : ''}
+
       ${b.endStopId != null ? `
       <div class="shortturn-row" style="border-top:none;padding-top:0;">
         <div class="shortturn-field" style="flex:1;">
@@ -2403,6 +2491,48 @@ function buildFleetHTML(r) {
       </div>` : ''}
     </div>`;
   }).join('');
+}
+
+// Lead-in chain list + Add/Draw/Clear controls, shown under a bus's Starts
+// field once a custom start is set. The chain always ends by joining
+// wherever "Starts" currently points — if you change Starts, the join
+// label updates, but the chain itself is untouched.
+function buildLeadInHTML(r, b) {
+  const isPicking = window._leadInTarget.active && window._leadInTarget.routeId === r.id && window._leadInTarget.busId === b.id;
+  const chain = (b.leadInPath || [])
+    .map(id => state.stops.find(s => s.id === id))
+    .filter(Boolean);
+  const joinStop = state.stops.find(s => s.id === b.startStopId);
+
+  const stepsHTML = chain.map((s, i) => `
+    <div class="leadin-step">
+      <span class="leadin-step-num">${i+1}</span>
+      <span class="leadin-step-name">${s.isWaypoint ? '◆ ' : ''}${s.name}</span>
+      <button class="seq-remove" onclick="removeLeadInStop(${r.id},${b.id},${s.id})">✕</button>
+    </div>`).join('');
+
+  return `<div class="leadin-block">
+    <div style="font-size:9px;font-weight:800;color:#8b5cf6;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;display:flex;align-items:center;gap:5px;">
+      🔀 Lead-In Path <span style="font-size:8px;font-weight:800;padding:1px 5px;border-radius:3px;background:#4b5563;color:#d1d5db;">optional</span>
+    </div>
+    ${chain.length ? `<div class="leadin-chain">${stepsHTML}</div>` : `
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">
+        No lead-in set — this bus joins directly at its Starts stop. Add one if this bus's
+        real origin is off the route entirely (a depot, a street the route never touches, etc).
+      </div>`}
+    ${joinStop ? `<div class="leadin-join">→ Joins main route at: ${joinStop.name}</div>` : ''}
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button class="btn ${isPicking ? 'btn-danger' : 'btn-purple'}" style="flex:1;font-size:10px;padding:4px;"
+        onclick="${isPicking ? `stopLeadInPick(${r.id})` : `startLeadInPick(${r.id},${b.id})`}">
+        ${isPicking ? '🛑 Stop Picking' : '📍 Pick On Map'}
+      </button>
+      <button class="btn btn-purple" style="flex:1;font-size:10px;padding:4px;"
+        onclick="startLeadInPick(${r.id},${b.id}); setTool('draw');">
+        ✏️ Draw New
+      </button>
+      ${chain.length ? `<button class="btn btn-muted" style="font-size:10px;padding:4px 8px;" onclick="clearLeadInPath(${r.id},${b.id})">Clear</button>` : ''}
+    </div>
+  </div>`;
 }
 
 function spawnBus(routeId, serviceType='local') {
@@ -2420,7 +2550,7 @@ function spawnBus(routeId, serviceType='local') {
     const svcType = busConfig.serviceType || r.type;
     const loopData = buildBusLoop(r, svcType, busConfig);
     if (loopData) {
-      const { fullLoop, segDistances } = loopData;
+      const { fullLoop, segDistances, joinIdx } = loopData;
       const startPt = fullLoop[0];
       const { bgColor, icon } = makeBusMarker(r, svcType);
       const bus = {
@@ -2437,6 +2567,15 @@ function spawnBus(routeId, serviceType='local') {
         t:              0,
         dwellRemaining: 0,
         delayRemaining: 0, // live-spawned buses start immediately from stop 1
+        notInService:   false,
+        nisRemaining:   0,
+        willEndShort:   busConfig.endStopId != null,
+        endStopId:      busConfig.endStopId ?? null,
+        displayDest:    busConfig.displayDest || '',
+        joinIdx:        joinIdx || 0,
+        hasLeadIn:      (joinIdx || 0) > 0,
+        pendingDespawn: false,
+        icon, nisIcon: makeNotInServiceMarker(),
         marker: L.marker([startPt.lat, startPt.lng], { icon, zIndexOffset: 500 })
           .addTo(map)
           ,
@@ -2454,7 +2593,13 @@ function spawnBus(routeId, serviceType='local') {
 function removeBus(routeId, busId) {
   const r = state.routes.find(x => x.id === routeId);
   if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (b && b._leadInLine) map.removeLayer(b._leadInLine);
+  if (window._leadInTarget.active && window._leadInTarget.busId === busId) {
+    stopLeadInPick(routeId);
+  }
   r.fleetList = r.fleetList.filter(b => b.id !== busId);
+  redrawRouteLines();
   rerenderRouteBody(routeId);
 }
 
@@ -2470,7 +2615,17 @@ function setBusStartStop(routeId, busId, stopId) {
   const r = state.routes.find(x => x.id === routeId);
   if (!r || !r.fleetList) return;
   const b = r.fleetList.find(x => x.id === busId);
-  if (b) { b.startStopId = stopId; rerenderRouteBody(routeId); }
+  if (b) {
+    b.startStopId = stopId;
+    // A lead-in with no join point is meaningless — clear it if "Starts" is reset to Full Route
+    if (stopId == null && b.leadInPath) b.leadInPath = [];
+    // If lead-in pick mode was active for this bus, exit it — the join target just changed
+    if (window._leadInTarget.active && window._leadInTarget.busId === busId) {
+      stopLeadInPick(routeId);
+    }
+    redrawRouteLines();
+    rerenderRouteBody(routeId);
+  }
 }
 
 function setBusEndStop(routeId, busId, stopId) {
@@ -2529,7 +2684,7 @@ function quickAddToSide(routeId, stopId) {
 const EDGE_OFFSET_PX = 5; // pixel spacing between parallel overlapping lines
 
 function redrawRouteLines() {
-  // First pass: clear all existing layers (lines + terminal markers)
+  // First pass: clear all existing layers (lines + terminal markers + lead-ins)
   state.routes.forEach(r => {
     if (r.polyA) { map.removeLayer(r.polyA); r.polyA = null; }
     if (r.polysA) { r.polysA.forEach(p => map.removeLayer(p)); }
@@ -2538,6 +2693,11 @@ function redrawRouteLines() {
     r.polysB = [];
     if (r.terminalMarkers) { r.terminalMarkers.forEach(m => map.removeLayer(m)); }
     r.terminalMarkers = [];
+    if (r.fleetList) {
+      r.fleetList.forEach(b => {
+        if (b._leadInLine) { map.removeLayer(b._leadInLine); b._leadInLine = null; }
+      });
+    }
   });
 
   const toLatLng = id => {
@@ -2588,6 +2748,30 @@ function redrawRouteLines() {
 
     // Terminal markers
     drawTerminalMarkers(r, coordsA, coordsB);
+
+    // Lead-in paths — one dashed line (route color) per bus that has a
+    // custom approach AND hasn't already driven past its join point this
+    // sim run. Once traversed, _leadInTraversed sticks until sim restarts,
+    // so panning/zooming/editing elsewhere doesn't resurrect the dashes.
+    if (r.fleetList) {
+      r.fleetList.forEach(b => {
+        if (!b.leadInPath || !b.leadInPath.length) return;
+        if (b._leadInTraversed) return;
+        const leadCoords = b.leadInPath.map(toLatLng).filter(Boolean);
+        if (b.startStopId != null) {
+          const joinCoord = toLatLng(b.startStopId);
+          if (joinCoord) leadCoords.push(joinCoord);
+        }
+        if (leadCoords.length > 1) {
+          b._leadInLine = L.polyline(leadCoords, {
+            color: r.color, weight: 3, opacity: 0.85, dashArray: '5,5',
+          }).addTo(map).bindTooltip(
+            `${r.name} Bus lead-in (private approach)`,
+            { sticky: true }
+          );
+        }
+      });
+    }
   });
 }
 
@@ -3120,6 +3304,14 @@ function stopRouteMapPick(routeId) {
 }
 
 function handleRouteMapPick(stopId) {
+  // Lead-in authoring takes priority if active — clicking an existing stop
+  // appends it to the bus's private lead-in chain instead of a route side.
+  const leadIn = window._leadInTarget;
+  if (leadIn.active) {
+    addToLeadInPath(leadIn.routeId, leadIn.busId, stopId);
+    return;
+  }
+
   const pick = window._routePickMode;
 
   if (!pick.active) return;
@@ -3143,6 +3335,68 @@ function handleRouteMapPick(stopId) {
   setStatus(
     `Added ${stop?.name || stopId} to Side ${pick.side}`
   );
+}
+
+// ════════════════════════════════════════════
+//  LEAD-IN PATH AUTHORING
+//  A lead-in is a private chain of stops/waypoints belonging to exactly one
+//  bus, used when that bus's real-world origin is off the route's drawn path
+//  (e.g. starts from a depot or street the route itself never touches).
+//  The chain always terminates at the bus's startStopId, where it merges
+//  into the route's normal geometry and behaves exactly like any other bus.
+// ════════════════════════════════════════════
+
+function startLeadInPick(routeId, busId) {
+  // Lead-in picking and normal route picking are mutually exclusive
+  stopRouteMapPick(routeId);
+  window._leadInTarget.active = true;
+  window._leadInTarget.routeId = routeId;
+  window._leadInTarget.busId = busId;
+  setStatus('📍 Lead-In Pick Mode: click existing stops/waypoints to add them to this bus\'s approach, or use Draw Route to place brand new ones');
+  rerenderRouteBody(routeId);
+}
+
+function stopLeadInPick(routeId) {
+  window._leadInTarget.active = false;
+  window._leadInTarget.routeId = null;
+  window._leadInTarget.busId = null;
+  setStatus('Lead-in pick mode disabled');
+  if (routeId != null) rerenderRouteBody(routeId);
+}
+
+function addToLeadInPath(routeId, busId, stopId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (!b) return;
+  if (!b.leadInPath) b.leadInPath = [];
+  if (b.leadInPath.includes(stopId)) return; // no duplicates in the chain
+  b.leadInPath.push(stopId);
+  redrawRouteLines();
+  rerenderRouteBody(routeId);
+  const stop = state.stops.find(s => s.id === stopId);
+  setStatus(`Added ${stop?.name || stopId} to lead-in path`);
+}
+
+function removeLeadInStop(routeId, busId, stopId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (!b || !b.leadInPath) return;
+  b.leadInPath = b.leadInPath.filter(id => id !== stopId);
+  redrawRouteLines();
+  rerenderRouteBody(routeId);
+}
+
+function clearLeadInPath(routeId, busId) {
+  const r = state.routes.find(x => x.id === routeId);
+  if (!r || !r.fleetList) return;
+  const b = r.fleetList.find(x => x.id === busId);
+  if (!b) return;
+  b.leadInPath = [];
+  redrawRouteLines();
+  rerenderRouteBody(routeId);
+  setStatus('Lead-in path cleared');
 }
 
 // ════════════════════════════════════════════
@@ -3251,7 +3505,10 @@ function buildBusTooltipFrames(bus) {
   } else if (r) {
     const filterStops = pts => pts.filter(s => s.isWaypoint || (s.types && s.types.includes(svcType)));
     const stopsA = filterStops(r.sideA.map(id => state.stops.find(s => s.id === id)).filter(Boolean));
-    const loopMid = stopsA.length;
+    // Offset by joinIdx — segIdx is measured against the full loop INCLUDING
+    // any prepended lead-in stops, so the Side A/B boundary shifts by that much.
+    const offset = bus.joinIdx || 0;
+    const loopMid = offset + stopsA.length;
     const onSideA = bus.segIdx < loopMid;
     rawDest = (onSideA ? r.destA : r.destB) || '—';
   }
@@ -3354,12 +3611,28 @@ function buildBusLoop(r, svcType, busConfig) {
     if (fullLoop.length < 2) return null;
   }
 
+  // Lead-in path: a private chain of stops/waypoints that exists only for
+  // this bus, used when its real-world origin is off the route's drawn
+  // geometry entirely. If set, prepend it before the trimmed loop — the
+  // bus walks the lead-in first, then joins normal route behavior at the
+  // first point of fullLoop (which is already wherever startStopId resolved to).
+  let joinIdx = 0; // index in the final loop where "real route" behavior begins
+  if (busConfig && busConfig.leadInPath && busConfig.leadInPath.length) {
+    const leadInStops = busConfig.leadInPath
+      .map(id => state.stops.find(s => s.id === id))
+      .filter(Boolean);
+    if (leadInStops.length) {
+      fullLoop = [...leadInStops, ...fullLoop];
+      joinIdx = leadInStops.length;
+    }
+  }
+
   const segDistances = [];
   for (let k = 0; k < fullLoop.length - 1; k++) {
     const p1 = fullLoop[k], p2 = fullLoop[k+1];
     segDistances.push(map.distance([p1.lat, p1.lng], [p2.lat, p2.lng]) || 1);
   }
-  return { fullLoop, segDistances };
+  return { fullLoop, segDistances, joinIdx };
 }
 
 function makeBusMarker(r, svcType) {
@@ -3429,6 +3702,10 @@ function startSim() {
       r.fleetIdCounter = count;
     }
 
+    // Fresh sim run — any lead-in lines hidden from a previous run should
+    // reappear, since each bus starts its journey over from the beginning.
+    r.fleetList.forEach(b => { b._leadInTraversed = false; });
+
     const fleet = r.fleetList;
     const totalBuses = fleet.length;
 
@@ -3439,13 +3716,17 @@ function startSim() {
       const loopData = buildBusLoop(r, svcType, busConfig);
       if (!loopData) return;
 
-      const { fullLoop, segDistances } = loopData;
-      const isShortStart = busConfig.startStopId != null && fullLoop[0] && fullLoop[0].id === busConfig.startStopId;
+      const { fullLoop, segDistances, joinIdx } = loopData;
+      const hasLeadIn = joinIdx > 0;
+      // A bus with a lead-in is actively driving its approach (deadheading),
+      // so it should NOT start parked/grey — it's already in motion just
+      // hasn't joined the "real" route yet. Only a short-origin bus WITHOUT
+      // a lead-in (joining directly at an existing mid-route stop) starts
+      // parked Not In Service, since there's nothing for it to be doing yet.
+      const isShortStart = busConfig.startStopId != null && fullLoop[joinIdx] && fullLoop[joinIdx].id === busConfig.startStopId;
       const isShortEnd   = busConfig.endStopId   != null;
 
-      // Short-origin buses begin parked + Not In Service at their custom start;
-      // everyone else begins normally at the front of the loop.
-      const startNIS = isShortStart;
+      const startNIS = isShortStart && !hasLeadIn;
       const startPt = fullLoop[0];
 
       const { bgColor, icon } = makeBusMarker(r, svcType);
@@ -3475,6 +3756,8 @@ function startSim() {
         willEndShort:   isShortEnd,
         endStopId:      busConfig.endStopId ?? null,
         displayDest:    busConfig.displayDest || '',
+        joinIdx:        joinIdx,
+        hasLeadIn:      hasLeadIn,
         pendingDespawn: false,
         icon, nisIcon,
         marker: (() => {
@@ -3611,6 +3894,25 @@ function startSim() {
           bus.t = 0;
           const arrivedAt = bus.loop[bus.segIdx];
 
+          // Once this bus reaches its join point, its private lead-in has
+          // served its purpose for this sim run. We mark this on the fleet
+          // CONFIG (not just the live sim bus) because redrawRouteLines()
+          // runs on its own for unrelated reasons (panning, zooming, editing
+          // other routes) and would otherwise redraw the dashes right back
+          // in every time, since it only checks leadInPath, not bus state.
+          if (bus.hasLeadIn && !bus.leadInCleared && bus.segIdx >= bus.joinIdx) {
+            bus.leadInCleared = true;
+            const r = state.routes.find(x => x.id === bus.routeId);
+            const busCfg = r && r.fleetList && r.fleetList.find(x => x.id === bus.busFleetId);
+            if (busCfg) {
+              busCfg._leadInTraversed = true; // persists across redraws
+              if (busCfg._leadInLine) {
+                try { map.removeLayer(busCfg._leadInLine); } catch(e) {}
+                busCfg._leadInLine = null;
+              }
+            }
+          }
+
           if (arrivedAt && !arrivedAt.isWaypoint) {
             bus.dwellRemaining = DWELL_MS;
             remaining = 0;
@@ -3669,6 +3971,14 @@ function stopSim() {
   });
   state.simBuses = [];
   state.routes.forEach(r => {
+    // Lead-in dashed lines are tied to fleet bus objects we're about to
+    // discard — remove them from the map now or they'd leak as orphaned
+    // layers (the JS references vanish but Leaflet keeps rendering them).
+    if (r.fleetList) {
+      r.fleetList.forEach(b => {
+        if (b._leadInLine) { try { map.removeLayer(b._leadInLine); } catch(e) {} }
+      });
+    }
     r.fleetList = [];
     r.fleetIdCounter = 0;
   });
@@ -3763,6 +4073,7 @@ function normalizeFleetBus(b, routeType) {
     startStopId: b.startStopId ?? null,
     endStopId: b.endStopId ?? null,
     displayDest: b.displayDest || '',
+    leadInPath: Array.isArray(b.leadInPath) ? [...b.leadInPath] : [],
   };
 }
 
@@ -3846,6 +4157,9 @@ function applyLoadedData(data, mode) {
           // Remap short-turn stop references to the new stop ids from this merge
           if (nb.startStopId != null) nb.startStopId = stopIdMap[nb.startStopId] ?? nb.startStopId;
           if (nb.endStopId   != null) nb.endStopId   = stopIdMap[nb.endStopId]   ?? nb.endStopId;
+          if (nb.leadInPath && nb.leadInPath.length) {
+            nb.leadInPath = nb.leadInPath.map(id => stopIdMap[id] ?? id);
+          }
           return nb;
         }),
         fleetIdCounter: r.fleetIdCounter || 0,
